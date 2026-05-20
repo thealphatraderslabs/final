@@ -1,0 +1,1822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATL · MARKET SCANNER</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+/* ── ATL DESIGN TOKENS ─────────────────────────────────────── */
+:root {
+  --bg:         #080b0f;
+  --bg2:        #0d1117;
+  --bg3:        #111820;
+  --border:     rgba(255,255,255,0.07);
+  --border2:    rgba(255,255,255,0.13);
+  --green:      #00e676;
+  --green-dim:  rgba(0,230,118,0.10);
+  --red:        #ff4444;
+  --red-dim:    rgba(255,68,68,0.10);
+  --amber:      #ffd54f;
+  --amber-dim:  rgba(255,213,79,0.10);
+  --blue:       #40c4ff;
+  --blue-dim:   rgba(64,196,255,0.08);
+  --purple:     #ce93d8;
+  --text:       #e8edf2;
+  --muted:      #5a6470;
+  --sub:        #8892a0;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* grain */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  opacity: 0.025; pointer-events: none; z-index: 9999;
+}
+/* scanlines */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 4px);
+  pointer-events: none; z-index: 9998;
+}
+
+.app {
+  position: relative; z-index: 1;
+  max-width: 1400px; margin: 0 auto;
+  padding: 0 1.5rem 5rem;
+}
+
+/* ── HEADER ─────────────────────────────────────────────────── */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap; gap: 1rem;
+}
+.logo {
+  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 17px;
+  letter-spacing: 0.14em; display: flex; align-items: center; gap: 10px;
+}
+.logo-atl { color: var(--green); }
+.logo-pulse {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--green); box-shadow: 0 0 12px var(--green);
+  animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.3; transform: scale(0.6); }
+}
+.header-meta {
+  display: flex; align-items: center; gap: 1.25rem;
+  font-size: 10px; color: var(--muted); letter-spacing: 0.06em;
+}
+.api-badge { display: flex; align-items: center; gap: 5px; color: var(--sub); }
+.api-badge span { color: var(--green); }
+.last-scan { color: var(--muted); }
+
+.scan-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.1em; padding: 8px 22px;
+  background: transparent; border: 1px solid var(--green); color: var(--green);
+  cursor: pointer; transition: all 0.18s; text-transform: uppercase;
+  position: relative; overflow: hidden;
+}
+.scan-btn::before {
+  content: ''; position: absolute; inset: 0;
+  background: var(--green); transform: translateX(-101%);
+  transition: transform 0.18s; z-index: -1;
+}
+.scan-btn:hover { color: #080b0f; }
+.scan-btn:hover::before { transform: translateX(0); }
+.scan-btn:disabled { opacity: 0.35; cursor: not-allowed; color: var(--green); }
+.scan-btn:disabled::before { transform: translateX(-101%); }
+
+.mute-btn {
+  background: transparent; border: 1px solid var(--border2); color: var(--sub);
+  font-size: 14px; width: 34px; height: 34px; cursor: pointer;
+  transition: all 0.15s; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.mute-btn:hover { border-color: var(--green); }
+.mute-btn.muted { opacity: 0.4; }
+
+/* ── STATS ROW ──────────────────────────────────────────────── */
+.stats-row {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 8px; margin-bottom: 1.25rem;
+}
+.stat-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-top: 2px solid transparent; padding: 11px 13px;
+}
+.stat-card.s-scanned { border-top-color: var(--purple); }
+.stat-card.s-alert   { border-top-color: var(--red); }
+.stat-card.s-watch   { border-top-color: var(--amber); }
+.stat-card.s-signals { border-top-color: var(--blue); }
+.stat-card.s-time    { border-top-color: var(--green); }
+.stat-num {
+  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 24px;
+  line-height: 1; margin-bottom: 4px;
+}
+.stat-card.s-alert   .stat-num { color: var(--red); }
+.stat-card.s-watch   .stat-num { color: var(--amber); }
+.stat-card.s-scanned .stat-num { color: var(--purple); }
+.stat-card.s-signals .stat-num { color: var(--blue); }
+.stat-card.s-time    .stat-num { color: var(--green); font-size: 16px; line-height: 1.5; }
+.stat-lbl { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; }
+
+/* ── CONTROLS ───────────────────────────────────────────────── */
+.controls {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap;
+}
+.filter-group { display: flex; gap: 4px; flex-wrap: wrap; }
+.chip {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.06em;
+  padding: 5px 11px; border: 1px solid var(--border2); background: transparent;
+  color: var(--sub); cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.chip:hover { color: var(--blue); border-color: var(--blue); }
+.chip.active { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+.chip.active.fc-alert  { background: var(--red-dim);   border-color: var(--red);   color: var(--red); }
+.chip.active.fc-watch  { background: var(--amber-dim); border-color: var(--amber); color: var(--amber); }
+.chip.active.fc-green  { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+.divider { width: 1px; height: 22px; background: var(--border2); margin: 0 4px; }
+
+.search-input {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  background: var(--bg2); border: 1px solid var(--border2); color: var(--text);
+  padding: 5px 11px; outline: none; width: 150px; transition: border-color 0.12s;
+}
+.search-input:focus { border-color: var(--blue); }
+.search-input::placeholder { color: var(--muted); }
+
+.sort-select {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  background: var(--bg2); border: 1px solid var(--border2); color: var(--sub);
+  padding: 5px 10px; cursor: pointer; outline: none; margin-left: auto;
+}
+
+/* ── TABLE ──────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+col.c-rank   { width: 40px; }
+col.c-sym    { width: 110px; }
+col.c-status { width: 105px; }
+col.c-price  { width: 90px; }
+col.c-vol    { width: 82px; }
+col.c-oi     { width: 82px; }
+col.c-fund   { width: 84px; }
+col.c-fsr    { width: 72px; }
+col.c-oichg  { width: 82px; }
+col.c-pchg   { width: 82px; }
+col.c-depth  { width: 72px; }
+col.c-sig    { width: 100px; }
+col.c-crime  { width: 100px; }
+col.c-bias   { width: 105px; }
+col.c-tags   { width: auto; }
+col.c-action { width: 90px; }
+
+thead th {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 400;
+  color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase;
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+  background: var(--bg2); white-space: nowrap; cursor: pointer; user-select: none;
+  position: sticky; top: 0; z-index: 2;
+}
+thead th:hover { color: var(--blue); }
+
+tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background 0.08s;
+}
+tbody tr:hover { background: rgba(255,255,255,0.015); }
+tbody tr.row-alert   { border-left: 2px solid var(--red); }
+tbody tr.row-watch   { border-left: 2px solid var(--amber); }
+tbody tr.row-neutral { border-left: 2px solid transparent; }
+
+td {
+  padding: 9px 10px; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; font-size: 11px;
+}
+
+.rank-num { color: var(--muted); font-size: 10px; }
+.sym-name { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.04em; }
+.sym-pair { font-size: 8px; color: var(--muted); display: block; margin-top: 1px; letter-spacing: 0.06em; }
+
+.pill { font-size: 9px; font-weight: 500; padding: 2px 8px; letter-spacing: 0.06em; display: inline-block; }
+.pill-alert   { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(255,68,68,0.25); }
+.pill-watch   { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(255,213,79,0.25); }
+.pill-neutral { background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid var(--border); }
+
+.up   { color: var(--green); }
+.down { color: var(--red); }
+.flat { color: var(--sub); }
+
+.bar-wrap { display: flex; align-items: center; gap: 5px; }
+.mini-bar { flex: 1; height: 3px; background: var(--bg3); border-radius: 2px; overflow: hidden; min-width: 36px; }
+.mini-fill { height: 100%; border-radius: 2px; }
+.fill-sig   { background: var(--blue); }
+.fill-crime { background: var(--red); }
+.bar-num { font-size: 10px; min-width: 24px; text-align: right; }
+
+.tags-wrap { display: flex; gap: 3px; flex-wrap: wrap; }
+.tag { font-size: 8px; padding: 2px 5px; white-space: nowrap; letter-spacing: 0.04em; border-radius: 1px; }
+.tag-hot  { background: var(--red-dim);   color: var(--red); }
+.tag-warm { background: var(--amber-dim); color: var(--amber); }
+.tag-cool { background: var(--blue-dim);  color: var(--blue); }
+.tag-gray { background: rgba(255,255,255,0.05); color: var(--sub); }
+
+/* ── ANALYSE BUTTON (per-row) ───────────────────────────────── */
+.analyse-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; font-weight: 500;
+  letter-spacing: 0.08em; padding: 4px 10px;
+  background: transparent; border: 1px solid var(--green);
+  color: var(--green); cursor: pointer; transition: all 0.15s;
+  text-transform: uppercase; white-space: nowrap;
+}
+.analyse-btn:hover { background: var(--green); color: #080b0f; }
+
+/* ── EMPTY STATE ────────────────────────────────────────────── */
+.empty-state {
+  text-align: center; padding: 5rem 2rem; color: var(--muted);
+}
+.empty-state strong {
+  display: block; font-family: 'Syne', sans-serif; font-size: 15px;
+  font-weight: 700; margin-bottom: 0.5rem; color: var(--sub);
+}
+
+/* ── LOADING OVERLAY ────────────────────────────────────────── */
+.loading-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(8,11,15,0.94); z-index: 1000;
+  align-items: center; justify-content: center; flex-direction: column; gap: 1.5rem;
+}
+.loading-overlay.active { display: flex; }
+.loading-box {
+  border: 1px solid var(--border2); background: var(--bg2);
+  padding: 2.5rem 3.5rem; text-align: center; min-width: 320px;
+}
+.loading-title {
+  font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 800;
+  color: var(--green); letter-spacing: 0.16em; margin-bottom: 1rem;
+}
+.prog-track { width: 100%; height: 2px; background: var(--bg3); margin-bottom: 1rem; overflow: hidden; }
+.prog-fill { height: 100%; background: var(--green); width: 0%; transition: width 0.35s ease; }
+.loading-msg { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; }
+.loading-sub { font-size: 9px; color: var(--muted); margin-top: 0.5rem; opacity: 0.6; }
+.rl-warning { display: none; font-size: 9px; color: var(--amber); margin-top: 0.75rem; letter-spacing: 0.04em; }
+.rl-warning.show { display: block; }
+
+/* ── COIN MODAL (quick scan data) ───────────────────────────── */
+.modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(8,11,15,0.90); z-index: 2000;
+  align-items: center; justify-content: center; padding: 1rem;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+  background: var(--bg2); border: 1px solid var(--border2);
+  width: min(820px, 100%); max-height: 90vh; overflow-y: auto; padding: 2rem;
+}
+.modal-header {
+  display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 1.5rem;
+}
+.modal-sym { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; }
+.modal-sym span { color: var(--muted); font-size: 14px; }
+.modal-close {
+  background: none; border: 1px solid var(--border2); color: var(--sub);
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  padding: 4px 10px; cursor: pointer; transition: all 0.12s; flex-shrink: 0; letter-spacing: 0.06em;
+}
+.modal-close:hover { color: var(--red); border-color: var(--red); }
+.modal-scores { display: flex; gap: 0.75rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+.score-block {
+  flex: 1; min-width: 140px; background: var(--bg3);
+  border: 1px solid var(--border); padding: 14px 16px;
+}
+.score-block .s-label { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+.score-block .s-val   { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; line-height: 1; }
+.score-block .s-bar   { margin-top: 8px; height: 3px; background: var(--bg2); border-radius: 2px; overflow: hidden; }
+.score-block .s-bar-fill { height: 100%; border-radius: 2px; }
+.modal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 1.5rem; }
+.m-metric { background: var(--bg3); border: 1px solid var(--border); padding: 10px 13px; }
+.m-label { font-size: 9px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 5px; }
+.m-val   { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; }
+.m-section-title {
+  font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase;
+  border-bottom: 1px solid var(--border); padding-bottom: 5px; margin-bottom: 10px; margin-top: 1.25rem;
+}
+.sig-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 11px;
+}
+.sig-row:last-child { border-bottom: none; }
+.sig-row-name { color: var(--sub); }
+.verdict-box {
+  border: 1px solid var(--border2); border-left: 3px solid var(--green);
+  padding: 1rem 1.25rem; margin-top: 1.25rem;
+}
+.verdict-label { font-size: 9px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.verdict-text  { font-size: 12px; line-height: 1.8; color: var(--sub); }
+
+/* ── ANALYSE DEEP BUTTON in modal ───────────────────────────── */
+.modal-analyse-btn {
+  display: block; width: 100%; margin-top: 1.25rem;
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 500;
+  letter-spacing: 0.12em; padding: 12px 24px;
+  background: var(--green); border: none; color: #080b0f;
+  cursor: pointer; transition: all 0.18s; text-transform: uppercase;
+  text-align: center;
+}
+.modal-analyse-btn:hover { background: #00ff88; }
+
+/* ── TERMINAL OVERLAY ───────────────────────────────────────── */
+#terminal-overlay {
+  display: none; position: fixed; inset: 0; z-index: 3000;
+  background: var(--bg);
+  flex-direction: column;
+}
+#terminal-overlay.active { display: flex; }
+
+#terminal-topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 16px; height: 44px;
+  background: rgba(8,11,15,0.97);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; z-index: 10;
+}
+.terminal-back-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  letter-spacing: 0.08em; padding: 5px 14px;
+  background: transparent; border: 1px solid var(--border2);
+  color: var(--sub); cursor: pointer; transition: all 0.15s;
+  display: flex; align-items: center; gap: 6px;
+}
+.terminal-back-btn:hover { border-color: var(--green); color: var(--green); }
+.terminal-back-arrow { font-size: 14px; line-height: 1; }
+.terminal-coin-badge {
+  font-family: 'Syne', sans-serif; font-weight: 800; font-size: 15px;
+  letter-spacing: 0.08em; color: var(--text);
+}
+.terminal-coin-badge .badge-usdt { color: var(--muted); font-size: 10px; font-weight: 400; margin-left: 4px; }
+.terminal-coin-status {
+  font-size: 9px; letter-spacing: 0.1em; color: var(--muted); text-transform: uppercase;
+}
+.terminal-coin-bias {
+  font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.terminal-tf-group {
+  display: flex; gap: 3px; margin-left: auto;
+}
+.terminal-tf-btn {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px; letter-spacing: 0.08em;
+  padding: 4px 10px; background: transparent; border: 1px solid var(--border2);
+  color: var(--sub); cursor: pointer; transition: all 0.12s;
+}
+.terminal-tf-btn:hover { border-color: var(--blue); color: var(--blue); }
+.terminal-tf-btn.active { background: var(--blue-dim); border-color: var(--blue); color: var(--blue); }
+
+#terminal-frame {
+  flex: 1; border: none; width: 100%; height: 100%;
+  background: var(--bg);
+}
+
+/* scrollbar */
+::-webkit-scrollbar       { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+/* ── RESPONSIVE ─────────────────────────────────────────────── */
+@media (max-width: 1024px) { .stats-row { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) {
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+  .header { flex-direction: column; align-items: flex-start; }
+  .modal-grid { grid-template-columns: 1fr 1fr; }
+  .app { padding: 0 1rem 4rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADING -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-box">
+    <div class="loading-title">⬡ SCANNING MARKET</div>
+    <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    <div class="loading-msg" id="loadingMsg">Initializing...</div>
+    <div class="loading-sub" id="loadingSub"></div>
+    <div class="rl-warning" id="rlWarning">⚠ rate-limit guard active — throttling requests</div>
+  </div>
+</div>
+
+<!-- SCAN DATA MODAL -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalBody"></div>
+</div>
+
+<!-- ── TERMINAL OVERLAY (Phase 2 full analysis) ─────────────── -->
+<div id="terminal-overlay">
+  <div id="terminal-topbar">
+    <button class="terminal-back-btn" onclick="closeTerminal()">
+      <span class="terminal-back-arrow">←</span> BACK TO SCANNER
+    </button>
+    <div style="width:1px;height:18px;background:var(--border2)"></div>
+    <div class="terminal-coin-badge" id="term-coin-badge">
+      — <span class="badge-usdt">/ USDT PERP</span>
+    </div>
+    <div class="terminal-coin-status" id="term-coin-status">—</div>
+    <div class="terminal-coin-bias" id="term-coin-bias">—</div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+        <button id="term-share-btn" onclick="shareAnalysis()"
+          style="font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:0.08em;
+                 padding:5px 12px;background:transparent;border:1px solid var(--amber);
+                 color:var(--amber);cursor:pointer;transition:all 0.15s;text-transform:uppercase;
+                 display:flex;align-items:center;gap:5px">
+          ⬡ SHARE ANALYSIS
+        </button>
+        <div style="width:1px;height:18px;background:var(--border2)"></div>
+        <span style="font-size:9px;color:var(--muted);letter-spacing:0.08em">TIMEFRAME</span>
+        <div class="terminal-tf-group" id="term-tf-group">
+          <button class="terminal-tf-btn" data-tf="15m" onclick="switchTerminalTF(this)">15M</button>
+          <button class="terminal-tf-btn active" data-tf="1h" onclick="switchTerminalTF(this)">1H</button>
+          <button class="terminal-tf-btn" data-tf="4h" onclick="switchTerminalTF(this)">4H</button>
+          <button class="terminal-tf-btn" data-tf="1d" onclick="switchTerminalTF(this)">1D</button>
+          <button class="terminal-tf-btn" data-tf="1w" onclick="switchTerminalTF(this)">1W</button>
+        </div>
+      </div>
+  </div>
+  <iframe id="terminal-frame" src="about:blank" title="ATL Analyzer Terminal"></iframe>
+</div>
+
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="logo">
+      <div class="logo-pulse"></div>
+      <span class="logo-atl">ATL</span> · MARKET SCANNER
+    </div>
+    <div class="header-meta">
+      <div class="api-badge">BYBIT <span>V5</span> + BINANCE <span>FAPI</span> + <span>SPOT</span></div>
+      <div class="last-scan">last scan: <span id="lastScanTime">—</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="scan-btn" id="scanBtn" onclick="startScan()">▶ SCAN MARKET</button>
+      <button class="scan-btn" style="border-color:var(--blue);color:var(--blue)" onclick="openQuickAnalyse()">⊕ ANALYSE COIN</button>
+      <button class="mute-btn" id="muteBtn" onclick="toggleMute()" title="Toggle sound">🔊</button>
+    </div>
+  </header>
+
+  <!-- QUICK ANALYSE POPUP -->
+  <div id="qa-popup" style="display:none;position:fixed;inset:0;z-index:4000;background:rgba(8,11,15,0.88);align-items:center;justify-content:center">
+    <div style="background:var(--bg2);border:1px solid var(--border2);padding:2rem;min-width:320px;max-width:420px;width:90%">
+      <div style="font-family:'Syne',sans-serif;font-size:13px;font-weight:800;letter-spacing:0.14em;color:var(--text);margin-bottom:1.25rem">⊕ ANALYSE COIN</div>
+      <div style="margin-bottom:0.75rem">
+        <div style="font-size:9px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px">SYMBOL</div>
+        <input id="qa-symbol" type="text" placeholder="BTC, ETH, SOL…" maxlength="12"
+          style="width:100%;background:var(--bg3);border:1px solid var(--border2);color:var(--text);
+                 font-family:'JetBrains Mono',monospace;font-size:13px;padding:10px 12px;outline:none;
+                 letter-spacing:0.06em;text-transform:uppercase"
+          autocomplete="off" autocorrect="off" spellcheck="false"
+          onkeydown="if(event.key==='Enter')runQuickAnalyse()">
+      </div>
+      <div style="margin-bottom:1.5rem">
+        <div style="font-size:9px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px">TIMEFRAME</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap" id="qa-tf-group">
+          <button class="chip" onclick="qaSetTF('15m',this)">15M</button>
+          <button class="chip active fc-green" onclick="qaSetTF('1h',this)">1H</button>
+          <button class="chip" onclick="qaSetTF('4h',this)">4H</button>
+          <button class="chip" onclick="qaSetTF('1d',this)">1D</button>
+          <button class="chip" onclick="qaSetTF('1w',this)">1W</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button onclick="runQuickAnalyse()"
+          style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;
+                 letter-spacing:0.1em;padding:10px;background:var(--blue);border:none;
+                 color:#080b0f;cursor:pointer;text-transform:uppercase">OPEN TERMINAL →</button>
+        <button onclick="closeQuickAnalyse()"
+          style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:10px 14px;
+                 background:transparent;border:1px solid var(--border2);color:var(--sub);cursor:pointer">CANCEL</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row">
+    <div class="stat-card s-scanned"><div class="stat-num" id="stScanned">0</div><div class="stat-lbl">Pairs Scanned</div></div>
+    <div class="stat-card s-alert">  <div class="stat-num" id="stAlert">0</div>  <div class="stat-lbl">Alert</div></div>
+    <div class="stat-card s-watch">  <div class="stat-num" id="stWatch">0</div>  <div class="stat-lbl">Watch</div></div>
+    <div class="stat-card s-signals"><div class="stat-num" id="stSignals">0</div><div class="stat-lbl">With Signals</div></div>
+    <div class="stat-card s-time">   <div class="stat-num" id="stTime">—</div>   <div class="stat-lbl">Scan Duration</div></div>
+  </div>
+
+  <!-- CONTROLS -->
+  <div class="controls">
+    <div class="filter-group">
+      <button class="chip active" data-filter="all"   onclick="setFilter('all',this)">ALL</button>
+      <button class="chip fc-alert" data-filter="alert" onclick="setFilter('alert',this)">ALERT</button>
+      <button class="chip fc-watch" data-filter="watch" onclick="setFilter('watch',this)">WATCH</button>
+    </div>
+    <div class="divider"></div>
+    <div class="filter-group">
+      <button class="chip fc-green" data-sig="oi"       onclick="toggleSig('oi',this)">OI BUILD</button>
+      <button class="chip fc-green" data-sig="book"     onclick="toggleSig('book',this)">THIN BOOK</button>
+      <button class="chip fc-green" data-sig="funding"  onclick="toggleSig('funding',this)">FUNDING</button>
+      <button class="chip fc-green" data-sig="fspot"    onclick="toggleSig('fspot',this)">FUT>>SPOT</button>
+      <button class="chip fc-green" data-sig="coil"     onclick="toggleSig('coil',this)">COILING</button>
+      <button class="chip fc-green" data-sig="creep"    onclick="toggleSig('creep',this)">OI CREEP</button>
+      <button class="chip fc-green" data-sig="compress" onclick="toggleSig('compress',this)">COMPRESSED</button>
+    </div>
+    <input class="search-input" id="searchInput" placeholder="search symbol…" oninput="render()">
+    <select class="sort-select" id="sortSel" onchange="render()">
+      <option value="signalScore">sort: signal score</option>
+      <option value="crimeScore">sort: crime prob</option>
+      <option value="oiCurrent">sort: open interest</option>
+      <option value="fundingRate">sort: funding rate</option>
+      <option value="oiChg">sort: OI change %</option>
+      <option value="futVol">sort: futures volume</option>
+    </select>
+    <button id="exportBtn" onclick="exportCSV()"
+      style="display:none;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;
+             letter-spacing:0.08em;padding:5px 13px;background:transparent;
+             border:1px solid var(--amber);color:var(--amber);cursor:pointer;
+             transition:all 0.15s;text-transform:uppercase;white-space:nowrap;flex-shrink:0">
+      ↓ EXPORT CSV
+    </button>
+  </div>
+
+  <!-- TABLE -->
+  <div class="table-wrap">
+    <table>
+      <colgroup>
+        <col class="c-rank"><col class="c-sym"><col class="c-status">
+        <col class="c-price"><col class="c-vol"><col class="c-oi">
+        <col class="c-fund"><col class="c-fsr"><col class="c-oichg">
+        <col class="c-pchg"><col class="c-depth">
+        <col class="c-sig"><col class="c-crime"><col class="c-bias">
+        <col class="c-tags"><col class="c-action">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th onclick="hSort('symbol')">SYMBOL</th>
+          <th>STATUS</th>
+          <th onclick="hSort('price')">PRICE</th>
+          <th onclick="hSort('futVol')">24H VOL</th>
+          <th onclick="hSort('oiCurrent')">OPEN INT</th>
+          <th onclick="hSort('fundingRate')">FUNDING</th>
+          <th onclick="hSort('futSpotRatio')">F/S RATIO</th>
+          <th onclick="hSort('oiChg')">OI CHG</th>
+          <th onclick="hSort('priceChg')">PRICE CHG</th>
+          <th onclick="hSort('bookDepthPct')">BOOK DEPTH</th>
+          <th onclick="hSort('signalScore')">SIGNAL</th>
+          <th onclick="hSort('crimeScore')">CRIME PROB</th>
+          <th>BIAS</th>
+          <th>SIGNALS</th>
+          <th>ANALYSE</th>
+        </tr>
+      </thead>
+      <tbody id="tBody">
+        <tr><td colspan="16" class="empty-state">
+          <strong>NO DATA YET</strong>
+          Press SCAN MARKET to scan all Binance + Bybit USDT perpetual pairs
+        </td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+/* ════════════════════════════════════════════════════════════════
+   ATL SOUND ENGINE — Web Audio API, procedural, no files
+═══════════════════════════════════════════════════════════════ */
+const SFX = (() => {
+  let ctx = null, muted = false;
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+  function osc(freq, type, gainVal, startT, endT) {
+    const c = getCtx(), o = c.createOscillator(), g = c.createGain();
+    o.connect(g); g.connect(c.destination);
+    o.type = type; o.frequency.setValueAtTime(freq, startT);
+    g.gain.setValueAtTime(gainVal, startT);
+    g.gain.exponentialRampToValueAtTime(0.0001, endT);
+    o.start(startT); o.stop(endT + 0.05);
+  }
+  function noise(gainVal, startT, duration) {
+    const c = getCtx(), buf = c.createBuffer(1, c.sampleRate * duration, c.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = c.createBufferSource(), g = c.createGain(), f = c.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 2000; f.Q.value = 0.5;
+    src.buffer = buf; src.connect(f); f.connect(g); g.connect(c.destination);
+    g.gain.setValueAtTime(gainVal, startT);
+    g.gain.exponentialRampToValueAtTime(0.0001, startT + duration);
+    src.start(startT); src.stop(startT + duration + 0.05);
+  }
+  return {
+    toggle()  { muted = !muted; return muted; },
+    isMuted() { return muted; },
+    scanStart()    { if (muted) return; const c=getCtx(),t=c.currentTime; osc(80,'sawtooth',0.06,t,t+0.3); osc(160,'sawtooth',0.04,t+0.1,t+0.5); osc(320,'sine',0.04,t+0.3,t+0.7); noise(0.03,t,0.15); },
+    alertFound()   { if (muted) return; const c=getCtx(),t=c.currentTime; osc(1200,'sine',0.18,t,t+0.12); osc(1600,'sine',0.14,t+0.15,t+0.26); osc(1200,'sine',0.10,t+0.30,t+0.40); },
+    watchFound()   { if (muted) return; const c=getCtx(),t=c.currentTime; osc(700,'sine',0.09,t,t+0.18); osc(900,'triangle',0.06,t+0.10,t+0.28); },
+    scanComplete() { if (muted) return; const c=getCtx(),t=c.currentTime; osc(523,'sine',0.12,t,t+0.25); osc(659,'sine',0.12,t+0.18,t+0.43); osc(784,'sine',0.14,t+0.36,t+0.70); osc(1046,'sine',0.10,t+0.54,t+0.90); },
+    modalOpen()    { if (muted) return; const c=getCtx(),t=c.currentTime; osc(300,'sine',0.07,t,t+0.08); osc(600,'sine',0.05,t+0.05,t+0.15); noise(0.02,t,0.08); },
+    modalClose()   { if (muted) return; const c=getCtx(),t=c.currentTime; osc(500,'sine',0.06,t,t+0.06); osc(280,'sine',0.04,t+0.04,t+0.12); },
+    rateLimit()    { if (muted) return; const c=getCtx(),t=c.currentTime; osc(150,'square',0.06,t,t+0.15); osc(120,'square',0.06,t+0.2,t+0.35); osc(150,'square',0.06,t+0.4,t+0.55); },
+  };
+})();
+
+/* ════════════════════════════════════════════════════════════════
+   API MODULE
+═══════════════════════════════════════════════════════════════ */
+const BYBIT      = 'https://api.bybit.com/v5/market';
+const FAPI       = 'https://fapi.binance.com/fapi/v1';
+const SPOT       = 'https://api.binance.com/api/v3';
+const ALPHA_BASE = 'https://www.binance.com/bapi/defi/v1/public';
+
+async function safeFetch(url, retries = 3, baseDelay = 800) {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const r = await fetch(url);
+      if (r.status === 418 || r.status === 429) {
+        document.getElementById('rlWarning').classList.add('show');
+        SFX.rateLimit();
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 500;
+        await sleep(delay); continue;
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return await r.json();
+    } catch (e) {
+      if (attempt === retries - 1) throw e;
+      await sleep(baseDelay * (attempt + 1));
+    }
+  }
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function pooledMap(arr, fn, limit = 8) {
+  const results = new Array(arr.length);
+  let idx = 0;
+  async function worker() {
+    while (idx < arr.length) {
+      const i = idx++;
+      try { results[i] = await fn(arr[i], i); }
+      catch (e) { results[i] = null; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, arr.length) }, worker));
+  return results;
+}
+
+async function fetchBybitTickers() {
+  const d = await safeFetch(`${BYBIT}/tickers?category=linear`);
+  if (!d || d.retCode !== 0) throw new Error('Bybit tickers failed');
+  const map = {};
+  for (const t of d.result.list) {
+    if (!t.symbol.endsWith('USDT')) continue;
+    map[t.symbol] = {
+      price: parseFloat(t.lastPrice), priceChg: parseFloat(t.price24hPcnt) * 100,
+      high24h: parseFloat(t.highPrice24h), low24h: parseFloat(t.lowPrice24h),
+      futVol: parseFloat(t.turnover24h), volBase: parseFloat(t.volume24h),
+      oiCurrent: parseFloat(t.openInterest) * parseFloat(t.lastPrice),
+      oiRaw: parseFloat(t.openInterest), fundingRate: parseFloat(t.fundingRate) * 100,
+      markPrice: parseFloat(t.markPrice), indexPrice: parseFloat(t.indexPrice),
+    };
+  }
+  return map;
+}
+
+async function fetchFapiTickers24() {
+  const d = await safeFetch(`${FAPI}/ticker/24hr`);
+  if (!Array.isArray(d)) return {};
+  const map = {};
+  for (const t of d) map[t.symbol] = t;
+  return map;
+}
+
+async function fetchSpotTickers() {
+  try {
+    const d = await safeFetch(`${SPOT}/ticker/24hr`);
+    if (!Array.isArray(d)) return {};
+    const map = {};
+    for (const t of d) {
+      if (!t.symbol.endsWith('USDT')) continue;
+      const vol = parseFloat(t.quoteVolume);
+      if (vol > 0) map[t.symbol] = vol;
+    }
+    return map;
+  } catch (e) { return {}; }
+}
+
+async function fetchAlphaSpotMap() {
+  try {
+    const infoRes = await safeFetch(`${ALPHA_BASE}/alpha-trade/get-exchange-info`, 2, 600);
+    if (!infoRes || infoRes.code !== '000000' || !infoRes.data?.symbols) return [];
+    const tradeable = infoRes.data.symbols.filter(s => s.status === 'TRADING' && s.quoteAsset === 'USDT');
+    const rawTickers = [];
+    const tickerBase = `${ALPHA_BASE}/alpha-trade/ticker?symbol=`;
+    const CONC = 8, DELAY = 60;
+    for (let i = 0; i < tradeable.length; i += CONC) {
+      const batch = tradeable.slice(i, i + CONC);
+      const results = await Promise.all(batch.map(async ({ symbol: alphaSymbol }) => {
+        try {
+          const r = await safeFetch(`${tickerBase}${alphaSymbol}`, 2, 300);
+          if (r?.code !== '000000' || !r.data) return null;
+          const price = parseFloat(r.data.lastPrice), vol = parseFloat(r.data.quoteVolume);
+          if (price > 0 && vol >= 0) return { alphaSymbol, price, vol };
+        } catch (e) {}
+        return null;
+      }));
+      for (const t of results) { if (t) rawTickers.push(t); }
+      if (i + CONC < tradeable.length) await sleep(DELAY);
+    }
+    return rawTickers;
+  } catch (e) { return []; }
+}
+
+function matchAlphaVol(bybitPrice, alphaTickers) {
+  if (!alphaTickers?.length || !(bybitPrice > 0)) return 0;
+  const tolerance = 0.015;
+  let best = null, bestDiff = Infinity;
+  for (const t of alphaTickers) {
+    const diff = Math.abs(t.price - bybitPrice) / bybitPrice;
+    if (diff < tolerance && diff < bestDiff) { bestDiff = diff; best = t; }
+  }
+  return best ? best.vol : 0;
+}
+
+async function fetchFapiFunding() {
+  const d = await safeFetch(`${FAPI}/fundingRate?limit=1000`);
+  if (!Array.isArray(d)) return {};
+  const map = {};
+  for (const f of d) {
+    if (!map[f.symbol] || f.fundingTime > map[f.symbol].fundingTime) map[f.symbol] = f;
+  }
+  return map;
+}
+
+async function fetchSymbolList() {
+  const d = await safeFetch(`${FAPI}/exchangeInfo`);
+  if (!d || !d.symbols) throw new Error('Failed to get FAPI exchange info');
+  return d.symbols
+    .filter(s => s.quoteAsset === 'USDT' && s.status === 'TRADING' && s.contractType === 'PERPETUAL')
+    .map(s => s.symbol);
+}
+
+async function fetchBybitOIHist(symbol) {
+  try {
+    const url = `${BYBIT}/open-interest?category=linear&symbol=${symbol}&intervalTime=1h&limit=8`;
+    const d = await safeFetch(url, 2, 400);
+    if (!d || d.retCode !== 0 || !d.result?.list?.length) return { oiChg: 0, oiList: [] };
+    const list = d.result.list;
+    if (list.length < 2) return { oiChg: 0, oiList: [] };
+    const newest = parseFloat(list[0].openInterest);
+    const oldest = parseFloat(list[list.length - 1].openInterest);
+    if (oldest <= 0) return { oiChg: 0, oiList: [] };
+    const oiChg = ((newest - oldest) / oldest) * 100;
+    // oldest→newest for trend analysis
+    const oiList = list.slice().reverse().map(r => parseFloat(r.openInterest));
+    return { oiChg, oiList };
+  } catch (e) { return { oiChg: 0, oiList: [] }; }
+}
+
+async function fetchBybitDepth(symbol) {
+  try {
+    const url = `${BYBIT}/orderbook?category=linear&symbol=${symbol}&limit=50`;
+    const d = await safeFetch(url, 2, 400);
+    if (!d || d.retCode !== 0) return null;
+    return {
+      bids: d.result.b.map(([p, q]) => [parseFloat(p), parseFloat(q)]),
+      asks: d.result.a.map(([p, q]) => [parseFloat(p), parseFloat(q)]),
+    };
+  } catch (e) { return null; }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCAN ENGINE
+═══════════════════════════════════════════════════════════════ */
+let allResults   = [];
+let activeFilter = 'all';
+let activeSigs   = new Set();
+let sortKey      = 'signalScore';
+let sortDir      = -1;
+
+async function startScan() {
+  const btn = document.getElementById('scanBtn');
+  btn.disabled = true; btn.textContent = '⟳ SCANNING…';
+  SFX.scanStart();
+  document.getElementById('loadingOverlay').classList.add('active');
+  document.getElementById('rlWarning').classList.remove('show');
+  allResults = [];
+  const t0 = Date.now();
+  try {
+    setProgress(5, 'Fetching bulk market data…', 'Bybit tickers · FAPI exchange info · SPOT 24hr · Binance Alpha');
+    const [bybitMap, fapiMap, spotMap, symbolList, alphaTickers] = await Promise.all([
+      fetchBybitTickers(), fetchFapiTickers24(), fetchSpotTickers(), fetchSymbolList(), fetchAlphaSpotMap(),
+    ]);
+
+    let alphaMerged = 0;
+    if (alphaTickers.length > 0) {
+      for (const sym of symbolList) {
+        if (spotMap[sym]) continue;
+        const bt = bybitMap[sym];
+        if (!bt?.price) continue;
+        const alphaVol = matchAlphaVol(bt.price, alphaTickers);
+        if (alphaVol > 0) { spotMap[sym] = alphaVol; alphaMerged++; }
+      }
+    }
+
+    setProgress(28, `Found ${symbolList.length} USDT perp pairs — scanning all of them`,
+      `Standard spot: ${Object.keys(spotMap).length - alphaMerged} · Alpha matched: ${alphaMerged}`);
+    await sleep(100);
+
+    const spotDataOk = Object.keys(spotMap).length > 50;
+    const preScored = [];
+    for (const sym of symbolList) {
+      const bt = bybitMap[sym];
+      if (!bt) continue;
+      const spotVol = spotMap[sym] || 0;
+      const futSpotRatio = spotDataOk ? (spotVol > 0 ? bt.futVol / spotVol : 99) : 1;
+      const pre = preScore(bt.priceChg, bt.fundingRate, futSpotRatio, bt.futVol, spotVol, bt.oiRaw);
+      preScored.push({ sym, bt, spotVol, futSpotRatio, spotDataOk, pre });
+    }
+    preScored.sort((a, b) => b.pre - a.pre);
+
+    const totalPairs = symbolList.length;
+    setProgress(32, `Deep scanning all ${totalPairs} pairs…`, 'Fetching OI history + order book via Bybit');
+    await sleep(50);
+
+    let done = 0;
+    const CONCURRENCY = 8, INTER_DELAY = 60;
+
+    async function deepScanOne(item) {
+      const [oiResult, depth] = await Promise.all([fetchBybitOIHist(item.sym), fetchBybitDepth(item.sym)]);
+      const { oiChg, oiList } = oiResult;
+      let bookDepthPct = 0;
+      if (depth && item.bt.price > 0) {
+        const range = item.bt.price * 0.005;
+        let bidV = 0, askV = 0;
+        for (const [p, q] of depth.bids) { if (item.bt.price - p <= range) bidV += p * q; }
+        for (const [p, q] of depth.asks) { if (p - item.bt.price <= range) askV += p * q; }
+        bookDepthPct = item.bt.futVol > 0 ? ((bidV + askV) / item.bt.futVol) * 100 : 0;
+      }
+      done++;
+      setProgress(32 + Math.round((done / totalPairs) * 58), `Scanning pair ${done} of ${totalPairs}…`, item.sym);
+      return buildCoin(item.sym, item.bt, item.spotVol, item.futSpotRatio, oiChg, oiList, bookDepthPct, item.spotDataOk);
+    }
+
+    for (let i = 0; i < preScored.length; i += CONCURRENCY) {
+      const batch = preScored.slice(i, i + CONCURRENCY);
+      const coins = await Promise.all(batch.map(deepScanOne));
+      for (const c of coins) { if (c) allResults.push(c); }
+      if (i + CONCURRENCY < preScored.length) await sleep(INTER_DELAY);
+    }
+
+    allResults.sort((a, b) => b.signalScore - a.signalScore);
+
+    const hasAlerts = allResults.some(r => r.status === 'alert');
+    const hasWatch  = allResults.some(r => r.status === 'watch');
+    if (hasAlerts) SFX.alertFound();
+    else if (hasWatch) SFX.watchFound();
+    setTimeout(() => SFX.scanComplete(), hasAlerts || hasWatch ? 600 : 0);
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    document.getElementById('stScanned').textContent = totalPairs;
+    document.getElementById('stAlert').textContent   = allResults.filter(r => r.status === 'alert').length;
+    document.getElementById('stWatch').textContent   = allResults.filter(r => r.status === 'watch').length;
+    document.getElementById('stSignals').textContent = allResults.length;
+    document.getElementById('stTime').textContent    = elapsed + 's';
+    document.getElementById('lastScanTime').textContent = new Date().toUTCString().slice(17, 25) + ' UTC';
+
+    setProgress(100, 'Scan complete!', `${allResults.length} coins with signals`);
+    await sleep(400);
+    document.getElementById('loadingOverlay').classList.remove('active');
+    document.getElementById('exportBtn').style.display = '';
+    render();
+
+  } catch (e) {
+    console.error(e);
+    document.getElementById('loadingOverlay').classList.remove('active');
+    alert('Scan failed: ' + e.message);
+  }
+  btn.disabled = false; btn.textContent = '▶ SCAN MARKET';
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCORING ENGINE — Enhanced with pre-pump detection signals
+   New signals vs original:
+     1. Volume compression  — fut vol < 40% of OI (proxy for unusually
+        low activity vs open positions). Classic pre-pump coiling.
+     2. Coiling + thin book combo — individually weak, together strong.
+        Combo gets a bonus 20pts instead of the sum of individual pts.
+     3. OI divergence (slow build) — OI growing steadily across 4+
+        consecutive hours while price flat. Lower threshold than
+        silentOI (3% over 8h vs 8% over 2h). Catches accumulation
+        that is too slow to trip the existing silentOI gate.
+     4. Coiling threshold widened — price flat window expanded from
+        <0.5% to <1.5% 24h change to catch slow drift coins.
+     5. preScore updated to surface vol-compressed coins for deep scan.
+═══════════════════════════════════════════════════════════════ */
+function preScore(priceChg, fundingRate, futSpotRatio, futVol, spotVol, oiRaw) {
+  let s = 0;
+  if (Math.abs(fundingRate) > 0.1) s += 20;
+  else if (Math.abs(fundingRate) > 0.05) s += 12;
+  // FIX 5: F/S only scores if futVol > 500K — dead coins with no spot don't qualify
+  if (spotVol === 0 && futVol > 500000) s += 20;
+  else if (futSpotRatio > 5  && futVol > 500000) s += 15;
+  else if (futSpotRatio > 2  && futVol > 500000) s += 8;
+  if (Math.abs(priceChg) < 1.5 && futVol < 5000000 && futVol > 50000) s += 5;
+  // FIX 1+2: vol compression only scores with real liquidity (futVol > 2M)
+  // FIX 2: thresholds raised — 5x strong, 3x mild (was 3x/1.5x)
+  if (oiRaw > 0 && futVol >= 2000000) {
+    const oiVsVol = oiRaw / futVol;
+    if (oiVsVol > 5) s += 12;
+    else if (oiVsVol > 3) s += 6;
+  }
+  return s;
+}
+
+// Helper: detect steady OI build across hourly snapshots
+// FIX 3: requires oiCurrent > 1M AND futVol > 1M — ignores dead coins
+function detectSteadyOIBuild(oiList, minChgPct = 2, oiCurrent = 0, futVol = 0) {
+  // FIX 3: minimum liquidity gates
+  if (oiCurrent < 1000000) return false;
+  if (futVol    < 1000000) return false;
+  if (!oiList || oiList.length < 4) return false;
+  const recent = oiList.slice(-5);
+  let risingHours = 0;
+  for (let i = 1; i < recent.length; i++) {
+    if (recent[i] > recent[i - 1] * 1.001) risingHours++;
+  }
+  const totalChg = recent[0] > 0
+    ? ((recent[recent.length - 1] - recent[0]) / recent[0]) * 100
+    : 0;
+  return risingHours >= 3 && totalChg >= minChgPct;
+}
+
+function buildCoin(symbol, bt, spotVol, futSpotRatio, oiChg, oiList, bookDepthPct, spotDataOk = true) {
+  const { price, priceChg, futVol, oiCurrent, oiRaw, fundingRate } = bt;
+  let signalScore = 0, crimeScore = 0;
+  const signals = [];
+
+  // ── 1. OI SIGNALS ─────────────────────────────────────────────
+  const priceFlat = Math.abs(priceChg) < 1.5;
+  const silentOI  = oiChg > 8  && priceFlat;
+  const oiSpike   = oiChg > 20;
+
+  if (silentOI) {
+    const pts = Math.min(30, oiChg * 1.5);
+    signalScore += pts; crimeScore += pts * 0.8;
+    signals.push({ label: `silent OI +${oiChg.toFixed(1)}%`, type: 'hot' });
+  } else if (oiSpike) {
+    signalScore += 20; crimeScore += 18;
+    signals.push({ label: `OI spike +${oiChg.toFixed(1)}%`, type: 'hot' });
+  } else if (oiChg > 3) {
+    signalScore += 8; crimeScore += 5;
+    signals.push({ label: `OI build +${oiChg.toFixed(1)}%`, type: 'warm' });
+  }
+
+  // Steady OI creep — FIX 3: pass oiCurrent + futVol for liquidity gate
+  const steadyBuild = !silentOI && !oiSpike && detectSteadyOIBuild(oiList, 2, oiCurrent, futVol);
+  if (steadyBuild && priceFlat) {
+    signalScore += 18; crimeScore += 14;
+    signals.push({ label: `OI creep ${oiChg.toFixed(1)}%`, type: 'hot' });
+  } else if (steadyBuild) {
+    signalScore += 10; crimeScore += 7;
+    signals.push({ label: `OI creep ${oiChg.toFixed(1)}%`, type: 'warm' });
+  }
+
+  // ── 2. BOOK DEPTH ──────────────────────────────────────────────
+  const veryThin = bookDepthPct > 0 && bookDepthPct < 0.2;
+  const thinBook = bookDepthPct > 0 && bookDepthPct < 0.5;
+  if (veryThin) {
+    signalScore += 25; crimeScore += 22;
+    signals.push({ label: 'paper book', type: 'hot' });
+  } else if (thinBook) {
+    signalScore += 15; crimeScore += 12;
+    signals.push({ label: `thin book ${bookDepthPct.toFixed(2)}%`, type: 'warm' });
+  }
+
+  // ── 3. FUNDING RATE ────────────────────────────────────────────
+  const absFR          = Math.abs(fundingRate);
+  const extremeFunding = absFR > 0.1;
+  const highFunding    = absFR > 0.05;
+  if (extremeFunding) {
+    signalScore += 20; crimeScore += 25;
+    signals.push({ label: `fund ${fundingRate > 0 ? '+' : ''}${fundingRate.toFixed(4)}%`, type: 'hot' });
+  } else if (highFunding) {
+    signalScore += 12; crimeScore += 15;
+    signals.push({ label: `fund ${fundingRate > 0 ? '+' : ''}${fundingRate.toFixed(4)}%`, type: 'warm' });
+  }
+
+  // ── 4. FUTURES vs SPOT ─────────────────────────────────────────
+  // FIX 5: all F/S signals require futVol > 500K
+  const noSpot    = spotVol === 0 && futVol > 500000;
+  const highFutSp = futSpotRatio > 5  && futVol > 500000;
+  const midFutSp  = futSpotRatio > 2  && futVol > 500000;
+  if (noSpot) {
+    signalScore += 20; crimeScore += 18;
+    signals.push({ label: 'no spot vol', type: 'hot' });
+  } else if (highFutSp) {
+    signalScore += 15; crimeScore += 12;
+    signals.push({ label: `F/S ${futSpotRatio.toFixed(1)}x`, type: 'warm' });
+  } else if (midFutSp) {
+    signalScore += 8; crimeScore += 5;
+    signals.push({ label: `F/S ${futSpotRatio.toFixed(1)}x`, type: 'cool' });
+  }
+
+  // ── 5. COILING + COMBO ────────────────────────────────────────
+  const coiling      = Math.abs(priceChg) < 1.5 && futVol < 8000000 && futVol > 50000;
+  const coilBookCombo = coiling && thinBook;
+  if (coilBookCombo) {
+    signalScore += 20; crimeScore += 18;
+    signals.push({ label: 'coil+book combo', type: 'hot' });
+  } else if (coiling) {
+    signalScore += 10; crimeScore += 6;
+    signals.push({ label: 'coiling', type: 'cool' });
+  }
+
+  // ── 6. VOLUME COMPRESSION ────────────────────────────────────
+  // FIX 1: minimum futVol 2M — dead/illiquid coins excluded
+  // FIX 2: thresholds raised to 5x (strong) and 3x (mild)
+  const oiVsVol      = (oiRaw > 0 && futVol > 0) ? oiRaw / futVol : 0;
+  const volCompressed = oiVsVol > 5  && futVol >= 2000000;
+  const mildCompressed = oiVsVol > 3 && oiVsVol <= 5 && futVol >= 2000000;
+  if (volCompressed) {
+    signalScore += 15; crimeScore += 10;
+    signals.push({ label: `vol compressed ${oiVsVol.toFixed(1)}x OI`, type: 'hot' });
+  } else if (mildCompressed) {
+    signalScore += 8; crimeScore += 5;
+    signals.push({ label: `vol compress ${oiVsVol.toFixed(1)}x OI`, type: 'warm' });
+  }
+
+  // ── 7. MARK/INDEX SPREAD ──────────────────────────────────────
+  if (bt.markPrice && bt.indexPrice && bt.indexPrice > 0) {
+    const spread = Math.abs((bt.markPrice - bt.indexPrice) / bt.indexPrice) * 100;
+    if (spread > 0.5) {
+      signalScore += 10; crimeScore += 8;
+      signals.push({ label: `spread ${spread.toFixed(2)}%`, type: 'warm' });
+    }
+  }
+
+  signalScore = Math.min(100, Math.round(signalScore));
+  crimeScore  = Math.min(100, Math.round(crimeScore));
+
+  // FIX 4: WATCH threshold restored to 35 (was lowered to 28 — too noisy)
+  let status = 'neutral';
+  if (signalScore >= 60 || crimeScore >= 60) status = 'alert';
+  else if (signalScore >= 35 || crimeScore >= 35) status = 'watch';
+
+  const fundPos     = fundingRate > 0, fundNeg = fundingRate < 0;
+  const fundExtreme = Math.abs(fundingRate) > 0.08;
+  const priceUp     = priceChg > 3, priceDown = priceChg < -3;
+  const oiBig       = oiChg > 8;
+
+  let bias = 'NEUTRAL', biasColor = 'flat';
+  if      (fundExtreme && fundNeg && priceUp)               { bias = 'SHORT SQUEEZE'; biasColor = 'up'; }
+  else if (fundExtreme && fundNeg && oiBig)                 { bias = 'SHORT SQUEEZE'; biasColor = 'up'; }
+  else if (fundExtreme && fundNeg)                          { bias = 'BEARISH LEAN';  biasColor = 'down'; }
+  else if (fundExtreme && fundPos && priceDown)             { bias = 'LONG FLUSH';    biasColor = 'down'; }
+  else if (fundExtreme && fundPos && oiBig && priceUp)      { bias = 'TRENDING UP';   biasColor = 'up'; }
+  else if (fundExtreme && fundPos && oiBig)                 { bias = 'PRE-PUMP';      biasColor = 'up'; }
+  else if (silentOI && fundNeg)                             { bias = 'COORDINATED';   biasColor = 'down'; }
+  else if (silentOI && fundPos)                             { bias = 'PRE-PUMP';      biasColor = 'up'; }
+  else if (silentOI && (spotVol === 0 || futSpotRatio > 8)) { bias = 'COORDINATED';  biasColor = 'up'; }
+  else if (steadyBuild && coiling && thinBook)              { bias = 'BREAKOUT LOAD'; biasColor = 'amber'; }
+  else if (steadyBuild && coiling)                          { bias = 'COILING';       biasColor = 'amber'; }
+  else if (volCompressed && priceFlat)                      { bias = 'COMPRESSED';    biasColor = 'amber'; }
+  else if (coiling && oiBig)                                { bias = 'BREAKOUT';      biasColor = fundNeg ? 'down' : fundPos ? 'up' : 'amber'; }
+  else if (oiBig && priceUp)                                { bias = 'TRENDING UP';   biasColor = 'up'; }
+  else if (oiBig && priceDown)                              { bias = 'TRENDING DOWN';  biasColor = 'down'; }
+  else if (thinBook)                                        { bias = 'MOVEABLE';      biasColor = 'amber'; }
+
+  if (status === 'neutral') return null;
+
+  return {
+    symbol, price, priceChg, futVol, spotVol, oiCurrent, oiChg, bookDepthPct,
+    fundingRate, futSpotRatio, signalScore, crimeScore, status, signals,
+    silentOI, thinBook, highFunding, highFutSpot: highFutSp || noSpot, coiling,
+    steadyBuild, volCompressed,
+    markPrice: bt.markPrice, indexPrice: bt.indexPrice, bias, biasColor,
+  };
+}
+
+/* ════════════════════════════════════════════════════════════════
+   RENDER
+═══════════════════════════════════════════════════════════════ */
+function render() {
+  const tbody  = document.getElementById('tBody');
+  const search = document.getElementById('searchInput').value.toUpperCase().trim();
+  const sk     = document.getElementById('sortSel').value;
+
+  let rows = allResults.filter(r => {
+    if (search && !r.symbol.includes(search)) return false;
+    if (activeFilter !== 'all' && r.status !== activeFilter) return false;
+    if (activeSigs.size > 0) {
+      if (activeSigs.has('oi')       && !r.silentOI)      return false;
+      if (activeSigs.has('book')     && !r.thinBook)       return false;
+      if (activeSigs.has('funding')  && !r.highFunding)    return false;
+      if (activeSigs.has('fspot')    && !r.highFutSpot)    return false;
+      if (activeSigs.has('coil')     && !r.coiling)        return false;
+      if (activeSigs.has('creep')    && !r.steadyBuild)    return false;
+      if (activeSigs.has('compress') && !r.volCompressed)  return false;
+    }
+    return true;
+  });
+
+  rows.sort((a, b) => sortDir * ((b[sk] || 0) - (a[sk] || 0)));
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="16" class="empty-state">
+      <strong>NO SIGNALS MATCH</strong>Try adjusting filters or run a new scan
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.slice(0, 500).map((r, i) => {
+    const sym  = r.symbol.replace('USDT', '');
+    const pChg = fmtChg(r.priceChg, 2);
+    const oChg = fmtChg(r.oiChg, 2);
+    const fund = fmtChg(r.fundingRate, 4);
+    const fsr  = r.futSpotRatio >= 99 ? `<span class="up">∞</span>` : r.futSpotRatio.toFixed(1) + 'x';
+    const book = r.bookDepthPct === 0
+      ? `<span class="flat">—</span>`
+      : r.bookDepthPct < 0.5
+        ? `<span class="down">${r.bookDepthPct.toFixed(2)}%</span>`
+        : `<span class="flat">${r.bookDepthPct.toFixed(2)}%</span>`;
+
+    const tags = r.signals.slice(0, 4).map(s =>
+      `<span class="tag tag-${s.type}">${s.label}</span>`
+    ).join('');
+
+    const biasColorMap = { up: 'var(--green)', down: 'var(--red)', amber: 'var(--amber)', flat: 'var(--muted)' };
+    const biasStyle = `color:${biasColorMap[r.biasColor] || 'var(--muted)'}`;
+    const triMap = { up: { sym: '▲', color: 'var(--green)' }, down: { sym: '▼', color: 'var(--red)' }, amber: { sym: '◆', color: 'var(--amber)' }, flat: { sym: '◆', color: 'var(--muted)' } };
+    const tri = triMap[r.biasColor] || triMap.flat;
+
+    const statusCell = `
+      <div style="display:flex;align-items:center;gap:5px">
+        <span class="pill pill-${r.status}">${r.status.toUpperCase()}</span>
+        <span style="font-size:11px;color:${tri.color};line-height:1;filter:drop-shadow(0 0 4px ${tri.color})">${tri.sym}</span>
+      </div>`;
+    const sigBar   = mkBar(r.signalScore, 'fill-sig',  'blue');
+    const crimeBar = mkBar(r.crimeScore,  'fill-crime', 'red');
+
+    return `<tr class="row-${r.status}" onclick="openModal('${r.symbol}')">
+      <td class="rank-num">${i + 1}</td>
+      <td><span class="sym-name">${sym}</span><span class="sym-pair">USDT PERP</span></td>
+      <td>${statusCell}</td>
+      <td>${fmtPrice(r.price)}</td>
+      <td>$${fmtNum(r.futVol)}</td>
+      <td>$${fmtNum(r.oiCurrent)}</td>
+      <td>${fund}</td>
+      <td>${fsr}</td>
+      <td>${oChg}</td>
+      <td>${pChg}</td>
+      <td>${book}</td>
+      <td>${sigBar}</td>
+      <td>${crimeBar}</td>
+      <td><span style="font-size:9px;letter-spacing:0.06em;font-weight:500;${biasStyle}">${r.bias}</span></td>
+      <td><div class="tags-wrap">${tags}</div></td>
+      <td onclick="event.stopPropagation()">
+        <button class="analyse-btn" onclick="openTerminal('${r.symbol}')">ANALYSE ↗</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SCAN DATA MODAL (quick view before deep analysis)
+═══════════════════════════════════════════════════════════════ */
+function openModal(symbol) {
+  const r = allResults.find(x => x.symbol === symbol);
+  if (!r) return;
+  const sym     = r.symbol.replace('USDT', '');
+  const verdict = buildVerdict(r);
+
+  document.getElementById('modalBody').innerHTML = `
+    <div class="modal-header">
+      <div>
+        <div class="modal-sym">${sym} <span>/ USDT PERP</span></div>
+        <div style="margin-top:4px;display:flex;gap:8px;align-items:center">
+          <span class="pill pill-${r.status}">${r.status.toUpperCase()}</span>
+          <span style="font-size:13px;color:${r.biasColor==='up'?'var(--green)':r.biasColor==='down'?'var(--red)':r.biasColor==='amber'?'var(--amber)':'var(--muted)'}">${r.biasColor==='up'?'▲':r.biasColor==='down'?'▼':'◆'}</span>
+          <span style="font-size:11px;font-weight:600;letter-spacing:0.08em;color:${r.biasColor==='up'?'var(--green)':r.biasColor==='down'?'var(--red)':r.biasColor==='amber'?'var(--amber)':'var(--muted)'}">${r.bias}</span>
+          <span style="font-size:10px;color:var(--muted)">— ${fmtPrice(r.price)}</span>
+        </div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕ CLOSE</button>
+    </div>
+
+    <div class="modal-scores">
+      <div class="score-block">
+        <div class="s-label">Signal Score</div>
+        <div class="s-val" style="color:var(--blue)">${r.signalScore}<span style="font-size:14px;color:var(--muted)">/100</span></div>
+        <div class="s-bar"><div class="s-bar-fill" style="width:${r.signalScore}%;background:var(--blue)"></div></div>
+      </div>
+      <div class="score-block">
+        <div class="s-label">Crime Probability</div>
+        <div class="s-val" style="color:var(--red)">${r.crimeScore}<span style="font-size:14px;color:var(--muted)">/100</span></div>
+        <div class="s-bar"><div class="s-bar-fill" style="width:${r.crimeScore}%;background:var(--red)"></div></div>
+      </div>
+    </div>
+
+    <div class="modal-grid">
+      <div class="m-metric"><div class="m-label">24h Futures Vol</div><div class="m-val">$${fmtNum(r.futVol)}</div></div>
+      <div class="m-metric"><div class="m-label">24h Spot Vol</div><div class="m-val ${r.spotVol===0?'down':''}">$${fmtNum(r.spotVol)}</div></div>
+      <div class="m-metric"><div class="m-label">Open Interest</div><div class="m-val">$${fmtNum(r.oiCurrent)}</div></div>
+      <div class="m-metric"><div class="m-label">Funding Rate</div><div class="m-val ${Math.abs(r.fundingRate)>0.05?(r.fundingRate>0?'down':'up'):''}">
+        ${r.fundingRate >= 0 ? '+' : ''}${r.fundingRate.toFixed(4)}%
+      </div></div>
+      <div class="m-metric"><div class="m-label">Futures/Spot Ratio</div><div class="m-val ${r.futSpotRatio>5?'down':''}">
+        ${r.futSpotRatio >= 99 ? '∞' : r.futSpotRatio.toFixed(2) + 'x'}
+      </div></div>
+      <div class="m-metric"><div class="m-label">24h Price Change</div><div class="m-val ${r.priceChg>=0?'up':'down'}">
+        ${r.priceChg >= 0 ? '+' : ''}${r.priceChg.toFixed(2)}%
+      </div></div>
+    </div>
+
+    <div class="m-section-title">Signal Breakdown</div>
+    ${[
+      ['OI Change (8h)',               r.oiChg > 3 ? 'up' : 'flat',    `${r.oiChg >= 0 ? '+' : ''}${r.oiChg.toFixed(2)}%`],
+      ['Silent OI Build',              r.silentOI ? 'down' : 'flat',    r.silentOI ? '⚠ YES — stealth accumulation' : 'NO'],
+      ['Steady OI Creep (4h+)',        r.steadyBuild ? 'down' : 'flat', r.steadyBuild ? '⚠ YES — slow institutional build' : 'NO'],
+      ['Order Book Depth (0.5% band)', r.thinBook ? 'down' : 'flat',   r.bookDepthPct === 0 ? 'not scanned' : r.bookDepthPct.toFixed(3) + '% of 24h vol'],
+      ['Thin Book',                    r.thinBook ? 'down' : 'flat',    r.thinBook ? '⚠ YES' : 'NO'],
+      ['Funding Rate Anomaly',         Math.abs(r.fundingRate) > 0.05 ? 'down' : 'flat', Math.abs(r.fundingRate) > 0.05 ? '⚠ ELEVATED' : 'NORMAL'],
+      ['Futures >> Spot',              r.highFutSpot ? 'down' : 'flat', r.highFutSpot ? '⚠ YES — derivatives-only play' : 'NO'],
+      ['Low Vol Coiling',              r.coiling ? 'up' : 'flat',       r.coiling ? 'YES — energy compressed' : 'NO'],
+      ['Volume Compression (OI/Vol)',  r.volCompressed ? 'down' : 'flat', r.volCompressed ? '⚠ YES — positions stacked vs activity' : 'NO'],
+    ].map(([name, cls, val]) => `
+      <div class="sig-row">
+        <span class="sig-row-name">${name}</span>
+        <span class="${cls}">${val}</span>
+      </div>`).join('')}
+
+    <div class="verdict-box">
+      <div class="verdict-label">Scanner Verdict</div>
+      <div class="verdict-text">${verdict}</div>
+    </div>
+
+    <button class="modal-analyse-btn" onclick="closeModal(); openTerminal('${r.symbol}')">
+      ↗ OPEN FULL ANALYSIS TERMINAL FOR ${sym}
+    </button>
+  `;
+
+  document.getElementById('modalOverlay').classList.add('active');
+  SFX.modalOpen();
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('active');
+  SFX.modalClose();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TERMINAL OVERLAY — Phase 2 launcher
+═══════════════════════════════════════════════════════════════ */
+let currentTerminalSymbol = null;
+let currentTerminalTF = '1h';
+
+function openTerminal(symbol) {
+  const r   = allResults.find(x => x.symbol === symbol);
+  const sym = symbol.replace('USDT', '');
+  currentTerminalSymbol = sym;
+
+  // Update topbar badge
+  document.getElementById('term-coin-badge').innerHTML =
+    `${sym} <span class="badge-usdt">/ USDT PERP</span>`;
+
+  if (r) {
+    const statusEl = document.getElementById('term-coin-status');
+    const biasEl   = document.getElementById('term-coin-bias');
+    statusEl.textContent = r.status.toUpperCase();
+    statusEl.style.color = r.status === 'alert' ? 'var(--red)' : r.status === 'watch' ? 'var(--amber)' : 'var(--muted)';
+    biasEl.textContent = r.bias;
+    biasEl.style.color = r.biasColor === 'up' ? 'var(--green)' : r.biasColor === 'down' ? 'var(--red)' : r.biasColor === 'amber' ? 'var(--amber)' : 'var(--muted)';
+  }
+
+  // Set active TF button
+  document.querySelectorAll('.terminal-tf-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tf === currentTerminalTF);
+  });
+
+  // Load terminal in iframe
+  loadTerminalFrame(sym, currentTerminalTF);
+
+  // Show overlay
+  document.getElementById('terminal-overlay').classList.add('active');
+  document.body.style.overflow = 'hidden';
+  SFX.modalOpen();
+}
+
+function closeTerminal() {
+  document.getElementById('terminal-overlay').classList.remove('active');
+  document.getElementById('terminal-frame').src = 'about:blank';
+  document.body.style.overflow = '';
+  SFX.modalClose();
+}
+
+function switchTerminalTF(btn) {
+  document.querySelectorAll('.terminal-tf-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentTerminalTF = btn.dataset.tf;
+  if (currentTerminalSymbol) loadTerminalFrame(currentTerminalSymbol, currentTerminalTF);
+}
+
+function loadTerminalFrame(symbol, tf) {
+  // Pass the symbol + tf as URL params to the analyzer page
+  const url = `analyzer.html?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(tf)}`;
+  document.getElementById('terminal-frame').src = url;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   VERDICT ENGINE — full detailed version (restored)
+═══════════════════════════════════════════════════════════════ */
+function buildVerdict(r) {
+  const sym   = r.symbol.replace('USDT', '');
+  const parts = [];
+
+  // ── Para 1: Bias narrative ─────────────────────────────────────
+  const biasLine = {
+    'SHORT SQUEEZE': (() => {
+      const active = r.priceChg > 5;
+      if (active) {
+        return `⚡ ${sym} is in an active short squeeze RIGHT NOW. Funding is deeply negative (${r.fundingRate.toFixed(4)}%) — shorts are massively over-leveraged and paying longs to hold. Price is already up ${r.priceChg.toFixed(2)}%, which means shorts are being liquidated as you read this. Each liquidation forces a buy, which pushes price higher, which liquidates more shorts. This is a cascade — it can run much further before it exhausts.`;
+      }
+      return `⚡ ${sym} has short squeeze written all over it. Funding rate is deeply negative (${r.fundingRate.toFixed(4)}%), meaning a huge number of traders are short and paying longs to hold. If price starts moving up, forced short covering cascades. The more negative the funding, the more violent the squeeze when it ignites.`;
+    })(),
+    'LONG FLUSH': `💥 ${sym} may be setting up for a long liquidation flush. Funding is extremely positive (${r.fundingRate.toFixed(4)}%) — the market is overloaded with leveraged longs. Price is already falling ${Math.abs(r.priceChg).toFixed(2)}%. When longs start getting margin called, they are forced to sell, which drops price further, which triggers more margin calls. This cascade can be brutal and fast.`,
+    'PRE-PUMP': `📈 ${sym} looks like it is loading for a pump. Open interest has grown ${r.oiChg.toFixed(1)}% while price barely moved — someone is quietly building a large position. Positive funding means longs are dominant and paying to hold, which is typical before a coordinated upward push. The quiet accumulation without price movement is the key tell.`,
+    'COORDINATED': `🎯 This looks like a coordinated futures play on ${sym}. Almost zero spot activity but futures OI keeps growing — derivatives-only stealth accumulation. This pattern suggests a group positioning before a move they intend to cause. Watch for a sudden volume spike on spot as the ignition signal.`,
+    'BREAKOUT': `💡 ${sym} is coiling for a breakout. Price has been flat while OI keeps building — compressed energy with no release. When it breaks, it will be sharp and fast in either direction. The longer it coils, the more violent the eventual move. Watch for the first strong candle with volume above average as your trigger.`,
+    'BREAKOUT LOAD': `🔋 ${sym} is loading for a breakout with high conviction. OI has been creeping up steadily for multiple hours while price stays flat AND the order book is thin. This is the exact pre-pump signature — low liquidity means a relatively small amount of buying can move price significantly once it starts. High probability setup.`,
+    'COILING': `🌀 ${sym} is coiling. OI has been building steadily over multiple hours while price drifts flat. No trigger yet but positions are stacking. This is the quiet phase before a move. Watch for a volume spike as the ignition — the first candle that breaks the range with above-average volume is your signal.`,
+    'COMPRESSED': `⚙️ ${sym} shows extreme volume compression. Open interest is far larger than daily trading activity, meaning positions are heavily stacked but nobody is actively trading. This is a spring under tension — when it releases, the move will be sharp because there is insufficient liquidity to absorb it. Direction unknown until the trigger appears.`,
+    'BEARISH LEAN': `📉 ${sym} is showing a bearish lean. Funding is negative (${r.fundingRate.toFixed(4)}%) but not at extreme levels yet — genuine bearish positioning rather than a squeeze setup. If key support cracks, this trends lower in an orderly way rather than a violent flush. Watch support levels carefully.`,
+    'TRENDING UP': `📊 ${sym} is in an active uptrend with derivatives supporting it. Price up ${r.priceChg.toFixed(2)}% while OI is growing — new longs are being added as price rises, which is healthy continuation behaviour. Watch funding rate — if it becomes extremely positive (>0.1%), overextension risk increases sharply.`,
+    'TRENDING DOWN': `📉 ${sym} is trending down with shorts actively adding into the move. Price off ${Math.abs(r.priceChg).toFixed(2)}% and OI still growing — active short continuation. This can keep going but squeeze risk increases the further it falls and the more negative funding becomes. Monitor funding closely.`,
+    'MOVEABLE': `⚠️ ${sym} has an extremely thin order book — only ${r.bookDepthPct > 0 ? r.bookDepthPct.toFixed(3) : '~0'}% of daily volume sits within 0.5% of current price. A single large market order could wick 2–5% instantly. This cuts both ways — easy to pump, easy to dump. Be very cautious with market orders.`,
+    'NEUTRAL': `ℹ️ ${sym} is showing no strong directional bias right now. Signals are present but not aligned into a clear setup. Wait for a cleaner entry — either funding to shift decisively, OI to build with price confirmation, or a structural break with volume.`,
+  }[r.bias] || `ℹ️ ${sym} — mixed signals, no dominant bias detected. Observe and wait.`;
+
+  parts.push(biasLine);
+
+  // ── Para 2: Additional signal context ─────────────────────────
+  const extras = [];
+  if (r.thinBook) {
+    extras.push(`Order book is paper-thin (${r.bookDepthPct > 0 ? r.bookDepthPct.toFixed(3) + '%' : '< 0.1%'} of daily volume) — price is vulnerable to large sudden moves in either direction with minimal capital.`);
+  }
+  if (r.silentOI) {
+    extras.push(`Open interest built ${r.oiChg.toFixed(1)}% over the last 8 hours while price stayed flat — this is the classic stealth accumulation pattern used before coordinated moves.`);
+  }
+  if (r.steadyBuild && !r.silentOI) {
+    extras.push(`OI has been creeping up steadily across multiple consecutive hours (${r.oiChg.toFixed(1)}% total) — slow institutional-style accumulation, not a sudden spike. This is harder to detect and often precedes larger moves.`);
+  }
+  if (r.volCompressed) {
+    extras.push(`Volume compression is extreme — open interest is significantly larger than daily trading activity. Positions are stacked with no outlet. When this resolves, it resolves fast.`);
+  }
+  if (r.highFutSpot) {
+    extras.push(`Futures volume is massively outpacing spot (${r.futSpotRatio >= 99 ? 'no spot market' : r.futSpotRatio.toFixed(1) + 'x ratio'}) — this is a derivatives-driven move. Spot traders are absent, which means the move is being orchestrated entirely in futures.`);
+  }
+  if (Math.abs(r.fundingRate) > 0.1) {
+    extras.push(`Funding at ${r.fundingRate.toFixed(4)}% is extreme — this level is unsustainable and will self-correct either through price movement or forced liquidations. The side paying (${r.fundingRate > 0 ? 'longs' : 'shorts'}) will eventually capitulate.`);
+  }
+  if (extras.length > 0) {
+    parts.push(`Additional signals: ${extras.join(' ')}`);
+  }
+
+  // ── Para 3: Active trade setup ────────────────────────────────
+  const setupMap = {
+    'SHORT SQUEEZE': (() => {
+      const active = r.priceChg > 5;
+      if (active) {
+        return `⚡ Active squeeze in progress — LONG: Price is already moving. If you're not in, wait for the first pullback to a 5-minute support rather than chasing. Ride it fast and take profit in stages — squeezes are violent but exhaust quickly. Stop loss below the most recent swing low. Watch for funding to flip positive — that signals the squeeze is over.`;
+      }
+      return `⚡ Pre-squeeze setup — LONG: Enter on the first signs of price moving up on elevated volume. A close above recent resistance with volume is the trigger. Stop below the most recent low. Target: the nearest overhead liquidity cluster. Exit at least 50% before funding normalises.`;
+    })(),
+    'LONG FLUSH':    `💥 Active flush setup — SHORT: Price is already falling. Enter on a rejection of any short-term bounce at resistance. Stop above the most recent swing high. Target: nearest major support / demand zone. Watch for funding to normalise — that signals the flush is over.`,
+    'PRE-PUMP':      `📈 Pre-pump setup — LONG: Wait for a clear break of the current range high with volume confirmation before entering. Do not enter while price is still flat — confirmation first. Stop below the breakout candle low. Target: next major resistance level.`,
+    'COORDINATED':   `🎯 Coordinated setup — LONG (speculative): Do not enter until spot volume picks up — that confirms the move is real. Enter on a spot volume spike above average. Stop below the consolidation low. Keep position size small — this can be a trap.`,
+    'BREAKOUT':      `💡 Breakout setup — WAIT FOR DIRECTION: Do not pre-position. Wait for a BOS (break of structure) on the 15m chart with volume. First candle close outside the range is your entry trigger. Stop behind the breakout candle. Trade the direction of the break.`,
+    'BREAKOUT LOAD': `🔋 High conviction pre-breakout — LONG BIAS: Book order just above the current range high. When price reaches it, confirm with a 15m candle close above. Stop below the consolidation low. The thin book means the move will be fast once triggered.`,
+    'COILING':       `🌀 Coiling setup — WAIT: No entry yet. Mark the current range high and low. First 15m candle close outside the range with above-average volume is your signal. Trade the direction of the breakout, not before.`,
+    'COMPRESSED':    `⚙️ Compression setup — WAIT FOR TRIGGER: No directional edge yet. Mark key levels. Watch for a sudden volume spike or funding shift as the first signal. When it moves, it will be sharp — have your levels ready in advance.`,
+    'BEARISH LEAN':  `📉 Bearish setup — SHORT on breakdown: Enter on a clear break of nearest support on the 1h chart. Stop above the most recent swing high. Target: next major support. Do not short into consolidation — wait for the break.`,
+    'TRENDING UP':   `📊 Trend continuation — LONG: Look for pullbacks to the EMA20/EMA50 on the 1h for entries. Do not chase. Stop below the pullback low. Scale out at prior highs. Monitor funding — exit if it goes extreme positive (>0.1%).`,
+    'TRENDING DOWN': `📉 Trend continuation — SHORT: Look for bounces to resistance on the 1h for entries. Stop above swing high. Target: next major support. Monitor funding — exit all shorts if funding becomes extreme negative (potential squeeze setup).`,
+    'MOVEABLE':      `⚠️ Thin book play — CAUTION: If you trade this, use limit orders only. Never market order into a thin book. The spread alone can cost you 1–2%. Use the thin liquidity to your advantage — small orders move price, making it easier to exit at targets.`,
+    'NEUTRAL':       `ℹ️ No setup — WAIT: Insufficient signal confluence. Wait for BOS/CHOCH on structure, or for funding to shift, or for OI to build with volume. Do not force a trade here.`,
+  };
+  const setup = setupMap[r.bias];
+  if (setup) parts.push(setup);
+
+  // ── Para 4: Crime / manipulation warning ──────────────────────
+  if (r.crimeScore >= 60) {
+    parts.push(`🚨 Crime probability ${r.crimeScore}/100 — HIGH. The combination of signals here looks very much like a coordinated manipulation setup. Don't FOMO in if price suddenly spikes. Smart money may pump it fast, print exits into your buy, then dump it. Keep position size tiny and have a hard stop.`);
+  } else if (r.crimeScore >= 35) {
+    parts.push(`⚠️ Crime probability ${r.crimeScore}/100 — MODERATE. Some manipulation markers are present. This doesn't mean the move is fake, but confirmation from spot volume and structure is required before entering. Don't be the exit liquidity.`);
+  } else {
+    parts.push(`✅ Crime probability ${r.crimeScore}/100 — LOW. Signals look organic and driven by genuine market positioning.`);
+  }
+
+  return parts.filter(Boolean).join('<br><br>');
+}
+
+/* ════════════════════════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════════════════════ */
+function setProgress(pct, msg, sub = '') {
+  document.getElementById('progFill').style.width = pct + '%';
+  document.getElementById('loadingMsg').textContent = msg;
+  document.getElementById('loadingSub').textContent = sub;
+}
+
+function fmtNum(n) {
+  if (!n || isNaN(n)) return '—';
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(2) + 'K';
+  return n.toFixed(0);
+}
+
+function fmtPrice(p) {
+  if (!p || isNaN(p)) return '—';
+  if (p < 0.0001) return '$' + p.toFixed(8);
+  if (p < 0.01)   return '$' + p.toFixed(6);
+  if (p < 1)      return '$' + p.toFixed(4);
+  if (p < 10)     return '$' + p.toFixed(3);
+  return '$' + p.toFixed(2);
+}
+
+function fmtChg(v, dec) {
+  if (v === undefined || v === null || isNaN(v)) return `<span class="flat">—</span>`;
+  const cls = v > 0.001 ? 'up' : v < -0.001 ? 'down' : 'flat';
+  return `<span class="${cls}">${v >= 0 ? '+' : ''}${v.toFixed(dec)}%</span>`;
+}
+
+function mkBar(val, fillClass, colorVar) {
+  return `<div class="bar-wrap">
+    <div class="mini-bar"><div class="mini-fill ${fillClass}" style="width:${val}%"></div></div>
+    <span class="bar-num" style="color:var(--${colorVar})">${val}</span>
+  </div>`;
+}
+
+function setFilter(val, el) {
+  activeFilter = val;
+  document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  render();
+}
+
+function toggleSig(val, el) {
+  if (activeSigs.has(val)) { activeSigs.delete(val); el.classList.remove('active'); }
+  else { activeSigs.add(val); el.classList.add('active'); }
+  render();
+}
+
+function hSort(key) {
+  if (sortKey === key) sortDir *= -1;
+  else { sortKey = key; sortDir = -1; }
+  render();
+}
+
+function toggleMute() {
+  const muted = SFX.toggle();
+  const btn = document.getElementById('muteBtn');
+  btn.textContent = muted ? '🔇' : '🔊';
+  btn.classList.toggle('muted', muted);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHANGE 1 — QUICK ANALYSE COIN
+═══════════════════════════════════════════════════════════════ */
+let qaSelectedTF = '1h';
+
+function openQuickAnalyse() {
+  const popup = document.getElementById('qa-popup');
+  popup.style.display = 'flex';
+  setTimeout(() => document.getElementById('qa-symbol')?.focus(), 80);
+}
+
+function closeQuickAnalyse() {
+  document.getElementById('qa-popup').style.display = 'none';
+  document.getElementById('qa-symbol').value = '';
+}
+
+function qaSetTF(tf, el) {
+  qaSelectedTF = tf;
+  document.querySelectorAll('#qa-tf-group .chip').forEach(b => {
+    b.classList.remove('active','fc-green');
+  });
+  el.classList.add('active','fc-green');
+}
+
+function runQuickAnalyse() {
+  const raw = document.getElementById('qa-symbol')?.value?.trim().toUpperCase();
+  if (!raw) { document.getElementById('qa-symbol').style.borderColor='var(--red)'; return; }
+  const sym = raw.replace(/USDT$/,'');
+  closeQuickAnalyse();
+  // Open terminal directly — no scan result needed
+  currentTerminalSymbol = sym;
+  currentTerminalTF     = qaSelectedTF;
+  document.getElementById('term-coin-badge').innerHTML =
+    `${sym} <span class="badge-usdt">/ USDT PERP</span>`;
+  document.getElementById('term-coin-status').textContent = 'MANUAL';
+  document.getElementById('term-coin-status').style.color = 'var(--blue)';
+  document.getElementById('term-coin-bias').textContent   = '';
+  document.querySelectorAll('.terminal-tf-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tf === currentTerminalTF);
+  });
+  loadTerminalFrame(sym, currentTerminalTF);
+  document.getElementById('terminal-overlay').classList.add('active');
+  document.body.style.overflow = 'hidden';
+  SFX.modalOpen();
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHANGE 2a — EXPORT SCAN LIST TO CSV
+═══════════════════════════════════════════════════════════════ */
+function exportCSV() {
+  if (!allResults.length) return;
+
+  const headers = [
+    'Symbol','Pair','Status','Bias',
+    'Price (USDT)','24h Vol (USDT)','Open Interest (USDT)',
+    'Funding Rate (%)','Futures/Spot Ratio','OI Change 1h (%)','Price Change 24h (%)',
+    'Book Depth (%)','Signal Score','Crime Score',
+    'Silent OI','Thin Book','High Funding','Fut>>Spot','Coiling',
+    'Signals','Scan Time'
+  ];
+
+  const scanTime = document.getElementById('lastScanTime').textContent || new Date().toUTCString();
+
+  const rows = allResults.map(r => {
+    const sym = r.symbol.replace('USDT','');
+    const sigs = r.signals.map(s => s.label).join(' | ');
+    return [
+      sym,
+      r.symbol,
+      r.status.toUpperCase(),
+      r.bias,
+      r.price,
+      r.futVol,
+      r.oiCurrent,
+      r.fundingRate,
+      r.futSpotRatio >= 99 ? 'NO SPOT' : r.futSpotRatio.toFixed(2),
+      r.oiChg.toFixed(2),
+      r.priceChg.toFixed(2),
+      r.bookDepthPct === 0 ? '' : r.bookDepthPct.toFixed(3),
+      r.signalScore,
+      r.crimeScore,
+      r.silentOI ? 'YES' : 'NO',
+      r.thinBook  ? 'YES' : 'NO',
+      r.highFunding  ? 'YES' : 'NO',
+      r.highFutSpot  ? 'YES' : 'NO',
+      r.coiling      ? 'YES' : 'NO',
+      sigs,
+      scanTime,
+    ].map(v => {
+      // Wrap in quotes if value contains comma or quote
+      const s = String(v);
+      return s.includes(',') || s.includes('"') || s.includes('\n')
+        ? `"${s.replace(/"/g,'""')}"` : s;
+    }).join(',');
+  });
+
+  const csv = [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' }); // BOM for Excel
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `ATL_Scan_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   CHANGE 2b — SHARE ANALYSIS (text snapshot from iframe)
+═══════════════════════════════════════════════════════════════ */
+// Share popup (injected once)
+function ensureSharePopup() {
+  if (document.getElementById('share-popup')) return;
+  const el = document.createElement('div');
+  el.id = 'share-popup';
+  el.style.cssText = `display:none;position:fixed;inset:0;z-index:5000;
+    background:rgba(8,11,15,0.92);align-items:center;justify-content:center`;
+  el.innerHTML = `
+    <div style="background:var(--bg2);border:1px solid var(--border2);
+                padding:1.75rem;width:min(600px,92vw);max-height:85vh;display:flex;flex-direction:column;gap:1rem">
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:800;
+                    letter-spacing:0.14em;color:var(--amber)">⬡ SHARE ANALYSIS</div>
+        <button onclick="closeSharePopup()"
+          style="background:none;border:1px solid var(--border2);color:var(--sub);
+                 font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 10px;cursor:pointer">✕ CLOSE</button>
+      </div>
+      <div style="font-size:9px;color:var(--muted);letter-spacing:0.06em">
+        SNAPSHOT GENERATED FROM CURRENT ANALYSIS · PASTE INTO TELEGRAM, DISCORD, NOTES
+      </div>
+      <textarea id="share-text" readonly
+        style="flex:1;min-height:340px;background:var(--bg3);border:1px solid var(--border2);
+               color:var(--sub);font-family:'JetBrains Mono',monospace;font-size:10px;
+               line-height:1.7;padding:12px;resize:none;outline:none;overflow-y:auto"></textarea>
+      <div style="display:flex;gap:8px">
+        <button id="share-copy-btn" onclick="copyShareText()"
+          style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;
+                 letter-spacing:0.1em;padding:10px;background:var(--amber);border:none;
+                 color:#080b0f;cursor:pointer;text-transform:uppercase">⎘ COPY TO CLIPBOARD</button>
+        <button onclick="downloadShareText()"
+          style="font-family:'JetBrains Mono',monospace;font-size:11px;padding:10px 16px;
+                 background:transparent;border:1px solid var(--border2);color:var(--sub);
+                 cursor:pointer;text-transform:uppercase;letter-spacing:0.08em">↓ DOWNLOAD .TXT</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
+}
+
+function shareAnalysis() {
+  ensureSharePopup();
+
+  // Try to pull live data from the iframe's window.__atlLastAnalysis
+  const frame = document.getElementById('terminal-frame');
+  let snap = null;
+  try {
+    snap = frame?.contentWindow?.__atlLastAnalysis;
+  } catch(e) {}
+
+  const sym  = currentTerminalSymbol || '—';
+  const tf   = currentTerminalTF     || '—';
+  const now  = new Date().toUTCString();
+
+  let text = '';
+
+  if (snap) {
+    const { ticker, analysis, signal } = snap;
+    const t   = ticker   || {};
+    const a   = analysis || {};
+    const s   = signal   || {};
+    const setup = s.setup || {};
+    const fmt = (v, dec=2) => v != null && !isNaN(v) ? Number(v).toFixed(dec) : '—';
+    const fmtP = (v) => v != null && !isNaN(v)
+      ? (v >= 1 ? '$' + Number(v).toFixed(2) : '$' + Number(v).toFixed(v < 0.01 ? 6 : 4))
+      : '—';
+
+    text = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATL · MARKET INTELLIGENCE TERMINAL
+AlphaTradersLabs — @AlphaTradersLabs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COIN       : ${sym} / USDT PERP
+TIMEFRAME  : ${tf.toUpperCase()}
+GENERATED  : ${now}
+
+━━━ OVERALL BIAS ━━━━━━━━━━━━━━━━━━━━━━━
+BIAS       : ${s.biasLabel || '—'}
+SCORE      : ${s.normalizedScore != null ? (s.normalizedScore > 0 ? '+' : '') + s.normalizedScore : '—'}
+
+━━━ PRICE & DERIVATIVES ━━━━━━━━━━━━━━━━
+PRICE      : ${fmtP(t.price)}
+24H CHANGE : ${fmt(t.price24h)}%
+MARK PRICE : ${fmtP(t.markPrice)}
+INDEX PRICE: ${fmtP(t.indexPrice)}
+FUNDING    : ${fmt(t.fundingRate, 4)}%
+OPEN INT   : ${t.openInterest ? '$' + (t.openInterest * (t.price||1) / 1e6).toFixed(2) + 'M' : '—'}
+RSI (14)   : ${fmt(a.lastRSI, 1)}
+ATR (14)   : ${fmtP(a.lastATR)}
+
+━━━ MARKET STRUCTURE ━━━━━━━━━━━━━━━━━━━
+MTF TREND  : ${(a.structure?.trend || '—').toUpperCase()}
+HTF TREND  : ${(a.htfStructure?.trend || '—').toUpperCase()}
+P/D ZONE   : ${(a.premDisc?.zone || '—').toUpperCase()} (${a.premDisc ? (a.premDisc.position*100).toFixed(1)+'%' : '—'})
+LAST EVENT : ${a.structure?.events?.slice(-1)[0] ? a.structure.events.slice(-1)[0].type + ' @ ' + fmtP(a.structure.events.slice(-1)[0].price) : 'NONE'}
+SWING HIGH : ${fmtP(a.pivotHighs?.slice(-1)[0]?.price)}
+SWING LOW  : ${fmtP(a.pivotLows?.slice(-1)[0]?.price)}
+
+━━━ ORDER BLOCKS (FRESH) ━━━━━━━━━━━━━━━
+${(a.orderBlocks||[]).filter(o=>o.state==='fresh').slice(0,5).map(ob=>{
+  const mid = (ob.low+ob.high)/2;
+  const dist = ((mid-(t.price||mid))/(t.price||mid)*100);
+  return `${ob.type==='demand'?'BULL OB':'BEAR OB'} : ${fmtP(ob.low)} – ${fmtP(ob.high)}  (${dist>=0?'+':''}${dist.toFixed(2)}%)`;
+}).join('\n') || 'NONE DETECTED'}
+
+━━━ FAIR VALUE GAPS ━━━━━━━━━━━━━━━━━━━━
+${(a.fvgs||[]).slice(0,5).map(f=>`${f.type==='bull'?'BFVG':'SFVG'} : ${fmtP(f.low)} – ${fmtP(f.high)}  [${f.filled?'FILLED':'OPEN'}]`).join('\n') || 'NONE DETECTED'}
+
+━━━ TRADE SETUP ━━━━━━━━━━━━━━━━━━━━━━━━
+DIRECTION  : ${setup.direction || '—'}
+ENTRY      : ${fmtP(setup.entry)}
+STOP LOSS  : ${fmtP(setup.sl)}
+TP1        : ${fmtP(setup.tp1)}
+TP2        : ${fmtP(setup.tp2)}
+TP3        : ${fmtP(setup.tp3)}
+INVALIDATION:
+${setup.invalidationReason || 'No active setup'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠ NOT FINANCIAL ADVICE — DYOR
+AlphaTradersLabs · @AlphaTradersLabs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+
+  } else {
+    // Fallback: scanner data if available
+    const r = allResults.find(x => x.symbol === sym + 'USDT') || allResults.find(x => x.symbol.startsWith(sym));
+    if (r) {
+      text = `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ATL · MARKET SCANNER SIGNAL
+AlphaTradersLabs — @AlphaTradersLabs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+COIN       : ${sym} / USDT PERP
+GENERATED  : ${now}
+
+STATUS     : ${r.status.toUpperCase()}
+BIAS       : ${r.bias}
+SIGNAL     : ${r.signalScore}/100
+CRIME PROB : ${r.crimeScore}/100
+
+PRICE      : $${r.price}
+24H CHANGE : ${r.priceChg >= 0 ? '+' : ''}${r.priceChg.toFixed(2)}%
+FUNDING    : ${r.fundingRate >= 0 ? '+' : ''}${r.fundingRate.toFixed(4)}%
+OPEN INT   : $${(r.oiCurrent/1e6).toFixed(2)}M
+OI CHANGE  : ${r.oiChg >= 0 ? '+' : ''}${r.oiChg.toFixed(2)}% (1h)
+F/S RATIO  : ${r.futSpotRatio >= 99 ? 'NO SPOT' : r.futSpotRatio.toFixed(2) + 'x'}
+BOOK DEPTH : ${r.bookDepthPct === 0 ? '—' : r.bookDepthPct.toFixed(3) + '%'}
+
+SIGNALS    : ${r.signals.map(s=>s.label).join(', ')}
+
+NOTE: Open full terminal for complete analysis.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠ NOT FINANCIAL ADVICE — DYOR
+AlphaTradersLabs · @AlphaTradersLabs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+    } else {
+      text = `ATL · MARKET INTELLIGENCE TERMINAL\nAlphaTradersLabs — @AlphaTradersLabs\n\nCOIN: ${sym} / USDT PERP\nTF: ${tf.toUpperCase()}\nGenerated: ${now}\n\nAnalysis still loading — please wait for analysis to complete then share again.\n\n⚠ NOT FINANCIAL ADVICE — DYOR`;
+    }
+  }
+
+  document.getElementById('share-text').value = text;
+  document.getElementById('share-popup').style.display = 'flex';
+}
+
+function closeSharePopup() {
+  document.getElementById('share-popup').style.display = 'none';
+}
+
+function copyShareText() {
+  const ta  = document.getElementById('share-text');
+  const btn = document.getElementById('share-copy-btn');
+  ta.select();
+  try {
+    navigator.clipboard.writeText(ta.value).then(() => {
+      btn.textContent = '✓ COPIED!';
+      btn.style.background = 'var(--green)';
+      setTimeout(() => { btn.textContent = '⎘ COPY TO CLIPBOARD'; btn.style.background = 'var(--amber)'; }, 2200);
+    });
+  } catch(e) {
+    document.execCommand('copy');
+    btn.textContent = '✓ COPIED!';
+    btn.style.background = 'var(--green)';
+    setTimeout(() => { btn.textContent = '⎘ COPY TO CLIPBOARD'; btn.style.background = 'var(--amber)'; }, 2200);
+  }
+}
+
+function downloadShareText() {
+  const text = document.getElementById('share-text').value;
+  const sym  = (currentTerminalSymbol || 'ATL').toUpperCase();
+  const ts   = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-');
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `ATL_Analysis_${sym}_${ts}.txt`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
