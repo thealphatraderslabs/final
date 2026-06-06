@@ -89,7 +89,18 @@ function drawEMAs(candles, emas) {
 }
 
 // ── Master Render ─────────────────────────────────────────────
-function renderAll(analysis) {
+function renderAll(
+  analysis,
+  _rawData,          // reserved — available for future chart overlays
+  _chartContainer,   // reserved — ResizeObserver in initChart handles sizing
+  _rsiContainer,     // reserved — RSI panel rendered by app.js renderRSIPanel
+  _macdContainer,    // reserved — MACD panel rendered by app.js renderMACDPanel
+  _volContainer,     // reserved
+  _fundingMini,      // reserved
+  _oiMini,           // reserved
+  _liqContainer      // reserved
+) {
+  if (!analysis) return;
   loadCandles(analysis.candles);
   drawEMAs(analysis.candles, analysis.emas);
 }
