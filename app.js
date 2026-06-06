@@ -13,7 +13,7 @@ import { runAnalysis }  from './indicators.js';
 import { generateSignal, generateMTFBias } from './signals.js';
 import {
   initChart, initRSIChart, initMACDChart,
-  setupOverlayCanvas, renderAll,
+  setupOverlayCanvas, renderAll, stopLiveTicker,
 } from './chart.js';
 
 // ── State ──────────────────────────────────────────────────────
@@ -133,6 +133,7 @@ async function analyze(symbol, tf = currentTF) {
 
   setLoading(true);
   window.__atlSetStatus?.('loading');
+  stopLiveTicker(); // stop previous live polling before starting new analysis
 
   try {
     rawData  = await fetchAllData(symbol, tf);
@@ -143,6 +144,7 @@ async function analyze(symbol, tf = currentTF) {
     signal = generateSignal(rawData, analysis);
 
     renderUI(symbol, rawData, analysis, signal);
+    window.__atlCurrentSymbol = symbol;  // expose for chart.js live ticker
     renderAll(
       analysis, rawData,
       dom.chartContainer(), dom.rsiContainer(), dom.macdContainer(),
