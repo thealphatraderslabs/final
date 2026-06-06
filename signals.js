@@ -329,24 +329,159 @@ function scoreOrderBook(analysis) {
 }
 
 // ═══════════════════════════════════════════════
+//  MOVE EXTENSION SCORE
+//  Measures how far price has already moved from
+//  its origin (nearest demand/supply OB or last
+//  swing low/high). If a coin has already fired
+//  5×ATR from its base, it is NOT a fresh entry.
+//
+//  Long extension  → penalise longs  (score negative)
+//  Short extension → penalise shorts (score positive)
+//  Price near base → reward the direction
+// ═══════════════════════════════════════════════
+function scoreMoveExtension(analysis) {
+  const { price, lastATR, orderBlocks, pivotLows, pivotHighs, candles } = analysis;
+  let score = 0, reasons = [];
+
+  if (!lastATR || lastATR === 0) return { score: 0, reasons: ['ATR unavailable — extension check skipped'] };
+
+  const freshDemand = orderBlocks.filter(ob => ob.type === 'demand' && ob.state === 'fresh').sort((a, b) => b.low - a.low);
+  const freshSupply = orderBlocks.filter(ob => ob.type === 'supply' && ob.state === 'fresh').sort((a, b) => a.high - b.high);
+
+  // ── Long-side extension: how far above nearest demand OB ──
+  const nearestDemand = freshDemand[0] || null;
+  const demandBase    = nearestDemand ? nearestDemand.high : pivotLows?.slice(-1)[0]?.price || null;
+
+  if (demandBase !== null) {
+    const distanceATR = (price - demandBase) / lastATR;
+
+    if (distanceATR > 8) {
+      score -= 2;
+      reasons.push(`Price is ${distanceATR.toFixed(1)}× ATR above nearest demand base ($${demandBase.toFixed(4)}) — severely extended, high reversion risk, avoid new longs`);
+    } else if (distanceATR > 5) {
+      score -= 1.5;
+      reasons.push(`Price is ${distanceATR.toFixed(1)}× ATR above demand base ($${demandBase.toFixed(4)}) — extended move, entry-chasing risk is elevated`);
+    } else if (distanceATR > 3) {
+      score -= 0.5;
+      reasons.push(`Price is ${distanceATR.toFixed(1)}× ATR from demand base ($${demandBase.toFixed(4)}) — moderate extension, pullback likely before continuation`);
+    } else if (distanceATR <= 1.5 && distanceATR >= 0) {
+      score += 1;
+      reasons.push(`Price is only ${distanceATR.toFixed(1)}× ATR above demand base ($${demandBase.toFixed(4)}) — fresh off the zone, high-quality long entry area`);
+    } else {
+      reasons.push(`Price is ${distanceATR.toFixed(1)}× ATR above demand base ($${demandBase.toFixed(4)}) — reasonable distance, within normal pullback range`);
+    }
+  }
+
+  // ── Short-side extension: how far below nearest supply OB ──
+  const nearestSupply = freshSupply[0] || null;
+  const supplyBase    = nearestSupply ? nearestSupply.low : pivotHighs?.slice(-1)[0]?.price || null;
+
+  if (supplyBase !== null && price < supplyBase) {
+    const distanceATR = (supplyBase - price) / lastATR;
+
+    if (distanceATR > 8) {
+      score += 2;
+      reasons.push(`Price is ${distanceATR.toFixed(1)}× ATR below supply base ($${supplyBase.toFixed(4)}) — severely extended short move, avoid new shorts`);
+    } else if (distanceATR > 5) {
+      score += 1.5;
+      reasons.push(`Price is ${distanceATR.toFixed(1)}× ATR below supply ($${supplyBase.toFixed(4)}) — extended downmove, short entry-chasing risk elevated`);
+    } else if (distanceATR <= 1.5 && distanceATR >= 0) {
+      score -= 1;
+      reasons.push(`Price is only ${distanceATR.toFixed(1)}× ATR below supply ($${supplyBase.toFixed(4)}) — fresh off the zone, high-quality short entry area`);
+    }
+  }
+
+  return { score, reasons };
+}
+
+// ═══════════════════════════════════════════════
+//  RECENT PUMP / DUMP SCORE
+//  Looks at price change over the last 20 and 5
+//  candles. A coin already up 30%+ in 20 bars is
+//  NOT a fresh long — it is a chasing trade.
+//  Penalises entries in the direction of an
+//  already-exhausted move.
+// ═══════════════════════════════════════════════
+function scoreRecentMove(analysis, data) {
+  const { candles, lastATR, price } = analysis;
+  const ticker = data?.ticker;
+  let score = 0, reasons = [];
+
+  // ── 24h move from ticker ───────────────────────
+  const change24h = ticker?.price24h ?? null; // already in %
+  if (change24h !== null) {
+    if (change24h > 40) {
+      score -= 2;
+      reasons.push(`+${change24h.toFixed(1)}% in 24h — parabolic move, extremely high mean-reversion risk, do NOT chase long`);
+    } else if (change24h > 20) {
+      score -= 1.5;
+      reasons.push(`+${change24h.toFixed(1)}% in 24h — large pump already in, late-entry risk is high`);
+    } else if (change24h > 10) {
+      score -= 0.5;
+      reasons.push(`+${change24h.toFixed(1)}% in 24h — notable upside move, prefer pullback entry over market`);
+    } else if (change24h < -40) {
+      score += 2;
+      reasons.push(`${change24h.toFixed(1)}% in 24h — capitulation dump, extreme oversold, avoid fresh shorts`);
+    } else if (change24h < -20) {
+      score += 1.5;
+      reasons.push(`${change24h.toFixed(1)}% in 24h — large dump already in, late-short risk is high`);
+    } else if (change24h < -10) {
+      score += 0.5;
+      reasons.push(`${change24h.toFixed(1)}% in 24h — notable downside move, prefer bounce/retest entry`);
+    } else {
+      reasons.push(`24h change ${change24h >= 0 ? '+' : ''}${change24h.toFixed(1)}% — no extreme directional exhaustion`);
+    }
+  }
+
+  // ── Short-term move: last 5 candles vs ATR ─────
+  // Measures raw candle momentum without ticker dependency
+  if (candles.length >= 6 && lastATR > 0) {
+    const base5      = candles[candles.length - 6].close;
+    const move5pct   = ((price - base5) / base5) * 100;
+    const move5atr   = Math.abs(price - base5) / lastATR;
+
+    if (move5atr > 4 && move5pct > 0) {
+      score -= 1;
+      reasons.push(`Last 5 bars: +${move5pct.toFixed(1)}% (${move5atr.toFixed(1)}× ATR) — short-term spike, momentum likely exhausted`);
+    } else if (move5atr > 4 && move5pct < 0) {
+      score += 1;
+      reasons.push(`Last 5 bars: ${move5pct.toFixed(1)}% (${move5atr.toFixed(1)}× ATR) — short-term capitulation, momentum likely exhausted`);
+    }
+  }
+
+  return { score, reasons };
+}
+
+// ═══════════════════════════════════════════════
 //  MASTER SIGNAL GENERATOR
 // ═══════════════════════════════════════════════
 function generateSignal(data, analysis) {
   const scores = {
-    structure:   scoreMarketStructure(analysis),
-    orderBlocks: scoreOrderBlocks(analysis),
-    fvg:         scoreFVGs(analysis),
-    premDisc:    scorePremiumDiscount(analysis),
-    rsi:         scoreRSI(analysis),
-    macd:        scoreMACD(analysis),
-    emas:        scoreEMAStack(analysis),
-    derivatives: scoreDerivatives(data, analysis),
-    orderBook:   scoreOrderBook(analysis),
+    structure:     scoreMarketStructure(analysis),
+    orderBlocks:   scoreOrderBlocks(analysis),
+    fvg:           scoreFVGs(analysis),
+    premDisc:      scorePremiumDiscount(analysis),
+    rsi:           scoreRSI(analysis),
+    macd:          scoreMACD(analysis),
+    emas:          scoreEMAStack(analysis),
+    derivatives:   scoreDerivatives(data, analysis),
+    orderBook:     scoreOrderBook(analysis),
+    moveExtension: scoreMoveExtension(analysis),       // NEW: penalise extended moves
+    recentMove:    scoreRecentMove(analysis, data),    // NEW: penalise pump/dump chasing
   };
 
   const weights = {
-    structure: 2, orderBlocks: 2, fvg: 1, premDisc: 1.5,
-    rsi: 1.5, macd: 1, emas: 1.5, derivatives: 2, orderBook: 1,
+    structure:     2,
+    orderBlocks:   2,
+    fvg:           1,
+    premDisc:      2,    // raised from 1.5 — zone matters more now
+    rsi:           1.5,
+    macd:          1,
+    emas:          1.5,
+    derivatives:   2,
+    orderBook:     1,
+    moveExtension: 2.5,  // highest weight — an extended move is the single biggest signal to NOT enter
+    recentMove:    2,    // strong weight — 24h pump/dump should heavily suppress direction bias
   };
   let totalScore = 0, maxScore = 0;
   for (const [key, s] of Object.entries(scores)) {
