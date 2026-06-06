@@ -1,6 +1,11 @@
 // ATL Ticker Analyzer — Signal & Setup Engine
 // Generates institutional-grade trade setups with full confluence reasoning
 
+import { detectSwings, detectStructure } from './indicators.js';
+
+// Internal alias used by generateMTFBias to re-run structure on different lookbacks
+const _structureHelpers = { detectSwings, detectStructure };
+
 // ═══════════════════════════════════════════════
 //  CONFLUENCE SCORING ENGINE
 //  Each factor scores -2 to +2, sum = bias score
@@ -152,10 +157,10 @@ function scoreRSI(analysis) {
     score -= 2;
     reasons.push(`RSI overbought at ${lastRSI.toFixed(1)} — momentum stretched, risk of mean-reversion pullback`);
   } else if (lastRSI < 45) {
-    score += 0.5;
-    reasons.push(`RSI at ${lastRSI.toFixed(1)} — bearish territory but not oversold, momentum weak`);
-  } else if (lastRSI > 55) {
     score -= 0.5;
+    reasons.push(`RSI at ${lastRSI.toFixed(1)} — bearish territory, momentum weak and fading`);
+  } else if (lastRSI > 55) {
+    score += 0.5;
     reasons.push(`RSI at ${lastRSI.toFixed(1)} — bullish territory, buyers in control`);
   } else {
     reasons.push(`RSI neutral at ${lastRSI.toFixed(1)} — no directional edge from momentum alone`);
@@ -516,7 +521,7 @@ function generateNarrative(analysis, data, direction) {
 //  so app.js can render it cleanly.
 // ═══════════════════════════════════════════════
 function generateMTFBias(analysis, rawData) {
-  const { structure, htfStructure, ltfStructure, price, pivotHighs, pivotLows, srLevels } = analysis;
+  const { structure, htfStructure, ltfStructure, price, srLevels } = analysis;
 
   // Helper: get the nearest S/R level for a given trend
   function nearestLevel(trend) {
@@ -542,33 +547,80 @@ function generateMTFBias(analysis, rawData) {
     return ((lvl.price - price) / price * 100);
   }
 
-  // LTF (15m) — use ltfStructure if available, else approximate from structure events
-  const ltfTrend   = ltfStructure?.trend || analysis.kltfStructure?.trend || '—';
-  const ltfEvt     = lastEventTag(ltfStructure || analysis.kltfStructure);
-  const ltfLevel   = nearestLevel(ltfTrend);
+  // Helper: derive structure from a candle array on demand
+  function deriveStructure(candles) {
+    if (!candles || candles.length < 50) return null;
+    const { detectSwings: ds, detectStructure: dst } = _structureHelpers;
+    const swings = ds(candles, 5, 20);
+    return dst(candles, swings.pivotHighs.map(p => ({...p})), swings.pivotLows.map(p => ({...p})));
+  }
+
+  // Helper: nearest pivot level from a set of pivotHighs/Lows
+  function nearestPivotLevel(pivotHighs, pivotLows, trend) {
+    if (!pivotHighs?.length && !pivotLows?.length) return null;
+    if (trend === 'bull') {
+      const above = pivotHighs.filter(p => p.price > price).sort((a, b) => a.price - b.price);
+      return above[0] ? { price: above[0].price } : null;
+    } else {
+      const below = pivotLows.filter(p => p.price < price).sort((a, b) => b.price - a.price);
+      return below[0] ? { price: below[0].price } : null;
+    }
+  }
+
+  // LTF (15m) — computed in indicators.js, available as ltfStructure
+  const ltfTrend = ltfStructure?.trend || '—';
+  const ltfEvt   = lastEventTag(ltfStructure);
+  const ltfLevel = nearestLevel(ltfTrend);
 
   // MTF (primary TF) — analysis.structure
-  const mtfTrend   = structure?.trend || '—';
-  const mtfEvt     = lastEventTag(structure);
-  const mtfLevel   = nearestLevel(mtfTrend);
+  const mtfTrend = structure?.trend || '—';
+  const mtfEvt   = lastEventTag(structure);
+  const mtfLevel = nearestLevel(mtfTrend);
 
-  // HTF (4H)
+  // HTF (4H) — analysis.htfStructure
   const htfTrend4h = htfStructure?.trend || '—';
   const htfEvt4h   = lastEventTag(htfStructure);
   const htfLevel4h = nearestLevel(htfTrend4h);
 
-  // 1D — use swingHigh/Low pivots as proxy for daily level
-  const pivH       = pivotHighs?.slice(-1)[0];
-  const pivL       = pivotLows?.slice(-1)[0];
-  const dailyLevel = pivH && pivL
-    ? (Math.abs(pivH.price - price) < Math.abs(pivL.price - price) ? { price: pivH.price } : { price: pivL.price })
-    : mtfLevel;
-  // For daily trend, use HTF as proxy if no separate daily structure
-  const dailyTrend = htfStructure?.trend || '—';
+  // 1D — derive from rawData.klinesHTF extended, or mark as unavailable
+  // rawData.klinesHTF is 4H candles (200 bars = ~33 days), enough for daily structure
+  // We reuse htfStructure for trend signal but pick pivot-based key level from HTF candles
+  let dailyTrend = '—';
+  let dailyEvt   = '—';
+  let dailyLevel = null;
 
-  // 1W — use the furthest pivot
-  const weeklyLevel = pivH ? { price: pivH.price } : null;
-  const weeklyTrend = htfStructure?.trend || '—';
+  const htfCandles = rawData?.klinesHTF || [];
+  if (htfCandles.length >= 50) {
+    // Re-run swing detection on 4H candles with wider lookback for a "daily feel"
+    const { detectSwings, detectStructure } = _structureHelpers;
+    const dailySwings = detectSwings(htfCandles, 10, 40);
+    const dailyStruct = detectStructure(
+      htfCandles,
+      dailySwings.pivotHighs.map(p => ({...p})),
+      dailySwings.pivotLows.map(p => ({...p}))
+    );
+    dailyTrend = dailyStruct?.trend || htfTrend4h;
+    dailyEvt   = lastEventTag(dailyStruct) || htfEvt4h;
+    dailyLevel = nearestPivotLevel(dailySwings.pivotHighs, dailySwings.pivotLows, dailyTrend);
+  }
+
+  // 1W — use widest swing lookback on HTF candles as weekly approximation
+  let weeklyTrend = '—';
+  let weeklyEvt   = '—';
+  let weeklyLevel = null;
+
+  if (htfCandles.length >= 100) {
+    const { detectSwings, detectStructure } = _structureHelpers;
+    const weeklySwings = detectSwings(htfCandles, 20, 60);
+    const weeklyStruct = detectStructure(
+      htfCandles,
+      weeklySwings.pivotHighs.map(p => ({...p})),
+      weeklySwings.pivotLows.map(p => ({...p}))
+    );
+    weeklyTrend = weeklyStruct?.trend || dailyTrend;
+    weeklyEvt   = lastEventTag(weeklyStruct) || '—';
+    weeklyLevel = nearestPivotLevel(weeklySwings.pivotHighs, weeklySwings.pivotLows, weeklyTrend);
+  }
 
   const rows = [
     {
@@ -595,17 +647,16 @@ function generateMTFBias(analysis, rawData) {
     {
       tf:        '1D',
       trend:     dailyTrend,
-      structure: '—',
+      structure: dailyEvt,
       keyLevel:  dailyLevel,
       distPct:   dist(dailyLevel),
     },
     {
       tf:        '1W',
       trend:     weeklyTrend,
-      structure: '—',
+      structure: weeklyEvt,
       keyLevel:  weeklyLevel,
       distPct:   dist(weeklyLevel),
-      isActive:  true,   // mark current TF
     },
   ];
 
