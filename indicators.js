@@ -593,6 +593,13 @@ function runAnalysis(data) {
     htfStructure = detectStructure(klinesHTF, htfSwings.pivotHighs.map(p => ({...p})), htfSwings.pivotLows.map(p => ({...p})));
   }
 
+  // LTF structure (15m) — used by the MTF bias table 15M row
+  let ltfStructure = null;
+  if (klinesLTF && klinesLTF.length > 50) {
+    const ltfSwings = detectSwings(klinesLTF, 5, 20);
+    ltfStructure = detectStructure(klinesLTF, ltfSwings.pivotHighs.map(p => ({...p})), ltfSwings.pivotLows.map(p => ({...p})));
+  }
+
   // OB analysis
   const obAnalysis = analyzeOrderBook(orderBook, ticker?.price || klinesMTF[klinesMTF.length - 1].close);
 
@@ -621,6 +628,7 @@ function runAnalysis(data) {
     pivotHighs, pivotLows,
     structure,
     htfStructure,
+    ltfStructure,
     orderBlocks,
     fvgs,
     premDisc,
